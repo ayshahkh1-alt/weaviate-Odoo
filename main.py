@@ -14,7 +14,10 @@ load_dotenv()
 
 app = FastAPI()
 
+# =========================
 # ✅ CORS
+# =========================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,12 +27,16 @@ app.add_middleware(
 )
 
 # =========================
-# 🔗 Weaviate Connection
+# 🔗 WEAVIATE CONNECTION
 # =========================
 
 client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.getenv("WEAVIATE_URL"),
-    auth_credentials=Auth.api_key(os.getenv("WEAVIATE_API_KEY")),
+
+    auth_credentials=Auth.api_key(
+        os.getenv("WEAVIATE_API_KEY")
+    ),
+
     headers={
         "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
     }
@@ -38,7 +45,7 @@ client = weaviate.connect_to_weaviate_cloud(
 collection = client.collections.get("KnowledgeBase")
 
 # =========================
-# 🤖 OpenAI Client
+# 🤖 OPENAI CLIENT
 # =========================
 
 ai_client = OpenAI(
@@ -67,7 +74,7 @@ class Question(BaseModel):
 
 
 # =========================
-# 🟣 PRODUCTS
+# 🌸 UPDATE PRODUCT
 # =========================
 
 @app.post("/update-flower")
@@ -75,12 +82,15 @@ def update_flower(flower: Flower):
 
     collection.data.insert(
         properties={
+
             "type": "product",
+
             "name": flower.name,
             "color": flower.color,
             "price": flower.price,
             "available": flower.available,
             "image_url": flower.image_url,
+
             "text": f"""
 اسم المنتج: {flower.name}
 اللون: {flower.color}
@@ -90,11 +100,13 @@ def update_flower(flower: Flower):
         }
     )
 
-    return {"status": "product saved ✔"}
+    return {
+        "status": "product saved ✔"
+    }
 
 
 # =========================
-# 🟣 ARTICLES
+# 📚 UPDATE ARTICLE
 # =========================
 
 @app.post("/update-article")
@@ -102,9 +114,12 @@ def update_article(article: Article):
 
     collection.data.insert(
         properties={
+
             "type": "article",
+
             "title": article.title,
             "content": article.content,
+
             "text": f"""
 عنوان المقال:
 {article.title}
@@ -115,15 +130,21 @@ def update_article(article: Article):
         }
     )
 
-    return {"status": "article saved ✔"}
+    return {
+        "status": "article saved ✔"
+    }
 
 
 # =========================
-# 🔎 CHAT (RAG - ANSWER ONLY)
+# 🤖 CHAT
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
+
+    # =========================
+    # 🔍 SEARCH
+    # =========================
 
     results = collection.query.near_text(
         query=data.question,
@@ -132,46 +153,97 @@ def chat(data: Question):
 
     context = ""
 
+    # =========================
+    # 🧠 BUILD CONTEXT
+    # =========================
+
     for obj in results.objects:
 
         props = obj.properties
+
+        # =====================
+        # 🌸 PRODUCTS
+        # =====================
 
         if props.get("type") == "product":
 
             context += f"""
 [منتج]
-الاسم: {props.get("name")}
-اللون: {props.get("color")}
-السعر: {props.get("price")}
-التوفر: {props.get("available")}
+
+الاسم:
+{props.get("name")}
+
+اللون:
+{props.get("color")}
+
+السعر:
+{props.get("price")}
+
+التوفر:
+{props.get("available")}
 """
+
+        # =====================
+        # 📚 ARTICLES
+        # =====================
 
         elif props.get("type") == "article":
 
             context += f"""
 [مقال]
-العنوان: {props.get("title")}
-المحتوى: {props.get("content")}
+
+العنوان:
+{props.get("title")}
+
+المحتوى:
+{props.get("content")}
 """
+
+    # =========================
+    # 🤖 OPENAI RESPONSE
+    # =========================
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
+
         messages=[
 
             {
                 "role": "system",
+
                 "content": """
 أنت مساعد ذكي لمتجر زهور وهدايا.
 
 استخدم المعلومات المرفقة فقط.
-إذا لم تجد معلومة كافية، قل ذلك بصراحة.
-لا تخترع معلومات.
-كن مختصر وواضح ومفيد.
+
+إذا لم تجد معلومة كافية:
+قل ذلك بوضوح.
+
+مهم جدًا:
+
+- لا تقل أنك لا تستطيع عرض الصور.
+- لا تذكر روابط الصور.
+- لا تقل "إليك الرابط".
+- الصور سيتم عرضها تلقائيًا داخل المتجر.
+- لا تخترع معلومات غير موجودة.
+
+ركز فقط على:
+- اسم المنتج
+- السعر
+- الألوان
+- المناسبة
+- الاقتراحات
+
+إذا وُجدت عدة منتجات:
+رتبها بشكل واضح ومرتب.
+
+كن لطيفًا ومختصرًا ومقنعًا.
 """
             },
 
             {
                 "role": "user",
+
                 "content": f"""
 سؤال المستخدم:
 {data.question}
@@ -184,24 +256,29 @@ def chat(data: Question):
     )
 
     # =========================
-    # ✅ RETURN ONLY ANSWER
+    # ✅ RETURN RESPONSE
     # =========================
 
     return {
-    "answer": response.choices[0].message.content,
 
-    "products": [
+        "answer": response.choices[0].message.content,
 
-        {
-            "name": obj.properties.get("name"),
-            "price": obj.properties.get("price"),
-            "image_url": obj.properties.get("image_url")
-        }
+        "products": [
 
-        for obj in results.objects
-        if obj.properties.get("type") == "product"
-    ]
-}
+            {
+                "name": obj.properties.get("name"),
+                "price": obj.properties.get("price"),
+                "image_url": obj.properties.get("image_url"),
+                "color": obj.properties.get("color"),
+                "available": obj.properties.get("available")
+            }
+
+            for obj in results.objects
+
+            if obj.properties.get("type") == "product"
+        ]
+    }
+
 
 # =========================
 # 🔚 CLOSE CONNECTION
@@ -209,4 +286,9 @@ def chat(data: Question):
 
 @app.on_event("shutdown")
 def shutdown_event():
-    client.close()
+
+    try:
+        client.close()
+
+    except:
+        pass
