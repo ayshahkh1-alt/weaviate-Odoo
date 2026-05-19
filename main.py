@@ -72,6 +72,7 @@ class Article(BaseModel):
 class Question(BaseModel):
     question: str
 
+
 # =========================
 # 🟣 PRODUCTS
 # =========================
@@ -103,6 +104,7 @@ def update_flower(flower: Flower):
         "status": "product saved ✔"
     }
 
+
 # =========================
 # 🟣 ARTICLES
 # =========================
@@ -132,9 +134,7 @@ def update_article(article: Article):
         "status": "article saved ✔"
     }
 
-# =========================
-# 🔎 CHAT (RAG)
-# =========================
+
 # =========================
 # 🔎 CHAT (RAG)
 # =========================
@@ -150,6 +150,17 @@ def chat(data: Question):
         query=data.question,
         limit=20
     )
+
+    # =========================
+    # ✅ DETECT BOUQUET REQUEST
+    # =========================
+
+    question = data.question.lower()
+
+    only_bouquets = False
+
+    if "بوكيه" in question:
+        only_bouquets = True
 
     product_context = ""
     article_context = ""
@@ -275,6 +286,8 @@ def chat(data: Question):
             )
         ]
     }
+
+
 # =========================
 # 🔚 CLOSE CONNECTION
 # =========================
