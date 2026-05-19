@@ -151,13 +151,6 @@ def chat(data: Question):
         limit=20
     )
 
-    question = data.question.lower()
-
-    only_bouquets = False
-
-    if "بوكيه" in question:
-        only_bouquets = True
-
     product_context = ""
     article_context = ""
 
