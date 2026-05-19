@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # =========================
-# 🔗 WEAVIATE CONNECTION
+# 🔗 Weaviate Connection
 # =========================
 
 client = weaviate.connect_to_weaviate_cloud(
@@ -45,7 +45,7 @@ client = weaviate.connect_to_weaviate_cloud(
 collection = client.collections.get("KnowledgeBase")
 
 # =========================
-# 🤖 OPENAI CLIENT
+# 🤖 OpenAI Client
 # =========================
 
 ai_client = OpenAI(
@@ -72,9 +72,8 @@ class Article(BaseModel):
 class Question(BaseModel):
     question: str
 
-
 # =========================
-# 🌸 UPDATE PRODUCT
+# 🟣 PRODUCTS
 # =========================
 
 @app.post("/update-flower")
@@ -104,9 +103,8 @@ def update_flower(flower: Flower):
         "status": "product saved ✔"
     }
 
-
 # =========================
-# 📚 UPDATE ARTICLE
+# 🟣 ARTICLES
 # =========================
 
 @app.post("/update-article")
@@ -134,16 +132,15 @@ def update_article(article: Article):
         "status": "article saved ✔"
     }
 
-
 # =========================
-# 🤖 CHAT
+# 🔎 CHAT (RAG)
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
     # =========================
-    # 🔍 SEARCH
+    # 🔍 SEARCH IN WEAVIATE
     # =========================
 
     results = collection.query.near_text(
@@ -154,7 +151,7 @@ def chat(data: Question):
     context = ""
 
     # =========================
-    # 🧠 BUILD CONTEXT
+    # 📦 BUILD CONTEXT
     # =========================
 
     for obj in results.objects:
@@ -168,6 +165,7 @@ def chat(data: Question):
         if props.get("type") == "product":
 
             context += f"""
+
 [منتج]
 
 الاسم:
@@ -181,6 +179,10 @@ def chat(data: Question):
 
 التوفر:
 {props.get("available")}
+
+رابط الصورة:
+{props.get("image_url")}
+
 """
 
         # =====================
@@ -190,6 +192,7 @@ def chat(data: Question):
         elif props.get("type") == "article":
 
             context += f"""
+
 [مقال]
 
 العنوان:
@@ -197,6 +200,7 @@ def chat(data: Question):
 
 المحتوى:
 {props.get("content")}
+
 """
 
     # =========================
@@ -212,32 +216,50 @@ def chat(data: Question):
                 "role": "system",
 
                 "content": """
-أنت مساعد ذكي لمتجر زهور وهدايا.
+أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
 
-استخدم المعلومات المرفقة فقط.
+المعلومات التي تصلك تأتي من:
+- منتجات متجر حقيقية
+- مقالات قاعدة المعرفة
 
-إذا لم تجد معلومة كافية:
-قل ذلك بوضوح.
+مهامك:
 
-مهم جدًا:
+1- فهم سؤال المستخدم بدقة.
 
-- لا تقل أنك لا تستطيع عرض الصور.
-- لا تذكر روابط الصور.
-- لا تقل "إليك الرابط".
-- الصور سيتم عرضها تلقائيًا داخل المتجر.
-- لا تخترع معلومات غير موجودة.
+2- إذا كان السؤال غير واضح:
+اسأل سؤال توضيحي قبل إعطاء الإجابة.
 
-ركز فقط على:
+3- إذا كان السؤال عن منتج:
+اذكر:
 - اسم المنتج
 - السعر
-- الألوان
-- المناسبة
-- الاقتراحات
+- الألوان المتوفرة
+- توفر المنتج
+- واقترح أفضل الخيارات المناسبة
 
-إذا وُجدت عدة منتجات:
-رتبها بشكل واضح ومرتب.
+4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
+لا تنسخ النص حرفيًا.
+استخرج المعلومة المهمة ثم اشرحها بأسلوب طبيعي ومختصر وواضح.
 
-كن لطيفًا ومختصرًا ومقنعًا.
+5- إذا لم تجد معلومات كافية:
+قل ذلك بوضوح ولا تخترع معلومات.
+
+6- كن ودودًا ولطيفًا وكأنك موظف متجر حقيقي.
+
+7- إذا وُجدت عدة خيارات:
+رتبها بشكل مرتب وسهل القراءة.
+
+8- لا تذكر كلمات مثل:
+raw_data
+context
+
+9- إذا كان السؤال عن مناسبة:
+اقترح منتجات مناسبة حسب المناسبة.
+
+10- إذا كان المستخدم محتار:
+ساعده بأسئلة ذكية حتى تصل للخيار المناسب.
+
+11- لا تقل أنك لا تستطيع عرض الصور.
 """
             },
 
@@ -248,7 +270,7 @@ def chat(data: Question):
 سؤال المستخدم:
 {data.question}
 
-المعلومات:
+المعلومات المتوفرة:
 {context}
 """
             }
@@ -256,7 +278,7 @@ def chat(data: Question):
     )
 
     # =========================
-    # ✅ RETURN RESPONSE
+    # ✅ FINAL RESPONSE
     # =========================
 
     return {
@@ -268,9 +290,7 @@ def chat(data: Question):
             {
                 "name": obj.properties.get("name"),
                 "price": obj.properties.get("price"),
-                "image_url": obj.properties.get("image_url"),
-                "color": obj.properties.get("color"),
-                "available": obj.properties.get("available")
+                "image_url": obj.properties.get("image_url")
             }
 
             for obj in results.objects
@@ -279,16 +299,10 @@ def chat(data: Question):
         ]
     }
 
-
 # =========================
 # 🔚 CLOSE CONNECTION
 # =========================
 
 @app.on_event("shutdown")
 def shutdown_event():
-
-    try:
-        client.close()
-
-    except:
-        pass
+    client.close()
