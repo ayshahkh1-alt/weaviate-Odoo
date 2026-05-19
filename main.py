@@ -188,9 +188,20 @@ def chat(data: Question):
     # =========================
 
     return {
-        "answer": response.choices[0].message.content
-    }
+    "answer": response.choices[0].message.content,
 
+    "products": [
+
+        {
+            "name": obj.properties.get("name"),
+            "price": obj.properties.get("price"),
+            "image_url": obj.properties.get("image_url")
+        }
+
+        for obj in results.objects
+        if obj.properties.get("type") == "product"
+    ]
+}
 
 # =========================
 # 🔚 CLOSE CONNECTION
