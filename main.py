@@ -135,6 +135,10 @@ def update_article(article: Article):
 # =========================
 # 🔎 CHAT (RAG)
 # =========================
+# =========================
+# 🔎 CHAT (RAG)
+# =========================
+
 @app.post("/chat")
 def chat(data: Question):
 
@@ -144,8 +148,15 @@ def chat(data: Question):
 
     results = collection.query.near_text(
         query=data.question,
-        limit=8
+        limit=20
     )
+
+    question = data.question.lower()
+
+    only_bouquets = False
+
+    if "بوكيه" in question:
+        only_bouquets = True
 
     product_context = ""
     article_context = ""
@@ -164,10 +175,16 @@ def chat(data: Question):
 
         if props.get("type") == "product":
 
-            name = props.get("name") or "غير متوفر"
+            name = props.get("name") or ""
+
+            # ✅ إذا المستخدم طلب بوكيه
+            # لا تعرض ورد مفرد
+            if only_bouquets and "بوكيه" not in name:
+                continue
+
             color = props.get("color") or "غير متوفر"
-            price = props.get("price") or 0
-            available = props.get("available") or 0
+            price = props.get("price") or "غير متوفر"
+            available = props.get("available") or "غير متوفر"
             image_url = props.get("image_url") or ""
 
             product_context += f"""
@@ -198,7 +215,7 @@ def chat(data: Question):
 {content}
 
 """
-            
+
     # =========================
     # 🤖 OPENAI RESPONSE
     # =========================
@@ -230,19 +247,14 @@ def chat(data: Question):
 - اسم المنتج
 - السعر
 - الألوان المتوفرة
+- التوفر
 
 - المنتجات هي المصدر الحقيقي الوحيد للأسعار والمخزون والتوفر.
 - لا تذكر أي منتج غير موجود ضمن المنتجات الحقيقية المرسلة لك.
 - ممنوع اختراع أي سعر أو كمية أو لون أو توفر.
+
 - إذا كانت المعلومة غير موجودة اكتب:
 غير متوفر
-
-- لا تقل:
-خيار رائع
-أنيق
-عصري
-فخم
-إلا إذا كانت هذه المعلومات موجودة فعلًا.
 
 - لا تخترع وصف تسويقي.
 
@@ -253,31 +265,19 @@ def chat(data: Question):
 - إذا وُجدت عدة منتجات:
 رتبها بشكل مرتب وسهل القراءة.
 
-- واقترح أفضل الخيارات المناسبة
-
 4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
 لا تنسخ النص حرفيًا.
-استخرج المعلومة المهمة ثم اشرحها بأسلوب طبيعي ومختصر وواضح.
+استخرج المعلومة المهمة ثم اشرحها بأسلوب طبيعي ومختصر.
 
-5- إذا لم تجد معلومات كافية:
-قل ذلك بوضوح ولا تخترع معلومات.
-
-6- كن ودودًا ولطيفًا وكأنك موظف متجر حقيقي.
-
-7- إذا وُجدت عدة خيارات:
-رتبها بشكل مرتب وسهل القراءة.
-
-8- لا تذكر كلمات مثل:
-raw_data
-context
-
-9- إذا كان السؤال عن مناسبة:
+5- إذا كان السؤال عن مناسبة:
 اقترح منتجات مناسبة حسب المناسبة.
 
-10- إذا كان المستخدم محتار:
-ساعده بأسئلة ذكية حتى تصل للخيار المناسب.
+6- إذا طلب المستخدم صورة:
+لا تقل أنك لا تستطيع عرض الصور.
+الصور يتم عرضها تلقائيًا من النظام.
 
-11- لا تقل أنك لا تستطيع عرض الصور.
+7- إذا كان المستخدم يريد بوكيه:
+لا تقترح ورد مفرد.
 """
             },
 
@@ -287,12 +287,14 @@ context
                 "content": f"""
 سؤال المستخدم:
 {data.question}
+
 المنتجات الحقيقية:
 =========================
 
 {product_context}
 
 =========================
+
 مقالات المعرفة:
 =========================
 
@@ -301,6 +303,7 @@ context
             }
         ]
     )
+
     # =========================
     # ✅ FINAL RESPONSE
     # =========================
@@ -315,7 +318,7 @@ context
                 "name": obj.properties.get("name"),
                 "price": obj.properties.get("price"),
                 "image_url": obj.properties.get("image_url"),
-            "available": obj.properties.get("available")
+                "available": obj.properties.get("available")
             }
 
             for obj in results.objects
@@ -323,7 +326,6 @@ context
             if obj.properties.get("type") == "product"
         ]
     }
-
 # =========================
 # 🔚 CLOSE CONNECTION
 # =========================
