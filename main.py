@@ -135,7 +135,6 @@ def update_article(article: Article):
 # =========================
 # 🔎 CHAT (RAG)
 # =========================
-
 @app.post("/chat")
 def chat(data: Question):
 
@@ -148,7 +147,8 @@ def chat(data: Question):
         limit=8
     )
 
-    context = ""
+    product_context = ""
+    article_context = ""
 
     # =========================
     # 📦 BUILD CONTEXT
@@ -164,24 +164,19 @@ def chat(data: Question):
 
         if props.get("type") == "product":
 
-            context += f"""
+            name = props.get("name") or "غير متوفر"
+            color = props.get("color") or "غير متوفر"
+            price = props.get("price") or 0
+            available = props.get("available") or 0
+            image_url = props.get("image_url") or ""
 
-[منتج]
+            product_context += f"""
 
-الاسم:
-{props.get("name")}
-
-اللون:
-{props.get("color")}
-
-السعر:
-{props.get("price")}
-
-التوفر:
-{props.get("available")}
-
-رابط الصورة:
-{props.get("image_url")}
+اسم المنتج: {name}
+اللون: {color}
+السعر: {price}
+الكمية المتوفرة: {available}
+رابط الصورة: {image_url}
 
 """
 
@@ -191,18 +186,19 @@ def chat(data: Question):
 
         elif props.get("type") == "article":
 
-            context += f"""
+            title = props.get("title") or ""
+            content = props.get("content") or ""
 
-[مقال]
+            article_context += f"""
 
-العنوان:
-{props.get("title")}
+عنوان المقال:
+{title}
 
 المحتوى:
-{props.get("content")}
+{content}
 
 """
-
+            
     # =========================
     # 🤖 OPENAI RESPONSE
     # =========================
@@ -234,7 +230,29 @@ def chat(data: Question):
 - اسم المنتج
 - السعر
 - الألوان المتوفرة
-- توفر المنتج
+
+- المنتجات هي المصدر الحقيقي الوحيد للأسعار والمخزون والتوفر.
+- لا تذكر أي منتج غير موجود ضمن المنتجات الحقيقية المرسلة لك.
+- ممنوع اختراع أي سعر أو كمية أو لون أو توفر.
+- إذا كانت المعلومة غير موجودة اكتب:
+غير متوفر
+
+- لا تقل:
+خيار رائع
+أنيق
+عصري
+فخم
+إلا إذا كانت هذه المعلومات موجودة فعلًا.
+
+- لا تخترع وصف تسويقي.
+
+- إذا لم تجد معلومات كافية قل ذلك بوضوح.
+
+- كن مختصر وواضح.
+
+- إذا وُجدت عدة منتجات:
+رتبها بشكل مرتب وسهل القراءة.
+
 - واقترح أفضل الخيارات المناسبة
 
 4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
@@ -269,14 +287,20 @@ context
                 "content": f"""
 سؤال المستخدم:
 {data.question}
+المنتجات الحقيقية:
+=========================
 
-المعلومات المتوفرة:
-{context}
+{product_context}
+
+=========================
+مقالات المعرفة:
+=========================
+
+{article_context}
 """
             }
         ]
     )
-
     # =========================
     # ✅ FINAL RESPONSE
     # =========================
@@ -290,7 +314,8 @@ context
             {
                 "name": obj.properties.get("name"),
                 "price": obj.properties.get("price"),
-                "image_url": obj.properties.get("image_url")
+                "image_url": obj.properties.get("image_url"),
+            "available": obj.properties.get("available")
             }
 
             for obj in results.objects
