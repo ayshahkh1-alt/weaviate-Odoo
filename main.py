@@ -125,11 +125,13 @@ def update_article(article: Article):
 @app.post("/chat")
 def chat(data: Question):
 
-    only_bouquets = data.only_bouquets   # ✅ FIXED
+    # =========================
+    # 🔍 SEARCH IN WEAVIATE
+    # =========================
 
     results = collection.query.near_text(
         query=data.question,
-        limit=20
+        limit=8
     )
 
     product_context = ""
@@ -139,43 +141,49 @@ def chat(data: Question):
     # 📦 BUILD CONTEXT
     # =========================
 
-    for obj in results.objects or []:   # ✅ safe
+    for obj in results.objects:
 
         props = obj.properties
 
+        # =====================
         # 🌸 PRODUCTS
+        # =====================
+
         if props.get("type") == "product":
 
-            name = props.get("name") or ""
+            name = props.get("name") or "غير متوفر"
             color = props.get("color") or "غير متوفر"
             price = props.get("price") or 0
             available = props.get("available") or 0
             image_url = props.get("image_url") or ""
 
-            # ✅ filter bouquets
-            if only_bouquets and "بوكيه" not in name:
-                continue
-
             product_context += f"""
+
 اسم المنتج: {name}
 اللون: {color}
 السعر: {price}
 الكمية المتوفرة: {available}
 رابط الصورة: {image_url}
+
 """
 
+        # =====================
         # 📚 ARTICLES
+        # =====================
+
         elif props.get("type") == "article":
 
             title = props.get("title") or ""
             content = props.get("content") or ""
 
             article_context += f"""
+
 عنوان المقال:
 {title}
 
 المحتوى:
 {content}
+
 """
 
     # =========================
@@ -184,29 +192,59 @@ def chat(data: Question):
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
+
         messages=[
+
             {
                 "role": "system",
-                "content": """
-أنت مساعد ذكي لمتجر زهور وهدايا.
 
-- لا تخترع منتجات.
-- لا تخترع أسعار.
-- استخدم البيانات فقط.
-- إذا طلب المستخدم بوكيهات اعرض البوكيهات فقط.
+                "content": """
+أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
+
+قواعد مهمة جدًا:
+
+- المنتجات هي المصدر الحقيقي الوحيد للأسعار والمخزون والتوفر.
+- ممنوع اختراع أي سعر أو كمية أو لون أو توفر.
+- إذا كانت المعلومة غير موجودة اكتب:
+غير متوفر
+
+- لا تقل:
+خيار رائع
+أنيق
+عصري
+فخم
+إلا إذا كانت هذه المعلومات موجودة فعلًا.
+
+- لا تخترع وصف تسويقي.
+
+- إذا لم تجد معلومات كافية قل ذلك بوضوح.
+
 - كن مختصر وواضح.
+
+- إذا وُجدت عدة منتجات:
+رتبها بشكل مرتب وسهل القراءة.
+
+- لا تقل أنك لا تستطيع عرض الصور.
 """
             },
+
             {
                 "role": "user",
+
                 "content": f"""
 سؤال المستخدم:
 {data.question}
 
-المنتجات:
+=========================
+المنتجات الحقيقية:
+=========================
+
 {product_context}
 
-المقالات:
+=========================
+مقالات المعرفة:
+=========================
+
 {article_context}
 """
             }
@@ -214,28 +252,27 @@ def chat(data: Question):
     )
 
     # =========================
-    # ✅ RESPONSE
+    # ✅ FINAL RESPONSE
     # =========================
 
     return {
+
         "answer": response.choices[0].message.content,
 
         "products": [
+
             {
                 "name": obj.properties.get("name"),
                 "price": obj.properties.get("price"),
                 "image_url": obj.properties.get("image_url"),
                 "available": obj.properties.get("available")
             }
-            for obj in results.objects or []
+
+            for obj in results.objects
+
             if obj.properties.get("type") == "product"
-            and (
-                not only_bouquets
-                or "بوكيه" in (obj.properties.get("name") or "")
-            )
         ]
     }
-
 # =========================
 # 🔚 SHUTDOWN
 # =========================
