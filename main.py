@@ -10,15 +10,7 @@ from weaviate.classes.init import Auth
 
 from openai import OpenAI
 
-# =========================
-# 🔄 LOAD ENV
-# =========================
-
 load_dotenv()
-
-# =========================
-# 🚀 FASTAPI
-# =========================
 
 app = FastAPI()
 
@@ -80,8 +72,9 @@ class Article(BaseModel):
 class Question(BaseModel):
     question: str
 
+
 # =========================
-# 🌸 UPDATE FLOWER
+# 🌸 UPDATE PRODUCT
 # =========================
 
 @app.post("/update-flower")
@@ -110,6 +103,7 @@ def update_flower(flower: Flower):
     return {
         "status": "product saved ✔"
     }
+
 
 # =========================
 # 📚 UPDATE ARTICLE
@@ -140,8 +134,9 @@ def update_article(article: Article):
         "status": "article saved ✔"
     }
 
+
 # =========================
-# 🤖 CHAT (RAG)
+# 🤖 CHAT
 # =========================
 
 @app.post("/chat")
@@ -159,7 +154,7 @@ def chat(data: Question):
     context = ""
 
     # =========================
-    # 📦 BUILD CONTEXT
+    # 🧠 BUILD CONTEXT
     # =========================
 
     for obj in results.objects:
@@ -186,9 +181,6 @@ def chat(data: Question):
 
 التوفر:
 {props.get("available")}
-
-رابط الصورة:
-{props.get("image_url")}
 """
 
         # =====================
@@ -224,19 +216,28 @@ def chat(data: Question):
 
 استخدم المعلومات المرفقة فقط.
 
-ممنوع اختراع:
-- منتجات
-- أسعار
-- ألوان
-- توفر
+إذا لم تجد معلومة كافية:
+قل ذلك بوضوح.
 
-إذا طلب المستخدم صورة:
-لا تقل أنك لا تستطيع عرض الصور.
+مهم جدًا:
 
-إذا كانت هناك صور ضمن المنتجات:
-اذكر المنتج بشكل طبيعي.
+- لا تقل أنك لا تستطيع عرض الصور.
+- لا تذكر روابط الصور.
+- لا تقل "إليك الرابط".
+- الصور سيتم عرضها تلقائيًا داخل المتجر.
+- لا تخترع معلومات غير موجودة.
 
-كن مختصر وواضح ولطيف.
+ركز فقط على:
+- اسم المنتج
+- السعر
+- الألوان
+- المناسبة
+- الاقتراحات
+
+إذا وُجدت عدة منتجات:
+رتبها بشكل واضح ومرتب.
+
+كن لطيفًا ومختصرًا ومقنعًا.
 """
             },
 
@@ -268,6 +269,7 @@ def chat(data: Question):
                 "name": obj.properties.get("name"),
                 "price": obj.properties.get("price"),
                 "image_url": obj.properties.get("image_url"),
+                "color": obj.properties.get("color"),
                 "available": obj.properties.get("available")
             }
 
@@ -277,10 +279,16 @@ def chat(data: Question):
         ]
     }
 
+
 # =========================
-# 🔚 SHUTDOWN
+# 🔚 CLOSE CONNECTION
 # =========================
 
 @app.on_event("shutdown")
 def shutdown_event():
-    client.close()
+
+    try:
+        client.close()
+
+    except:
+        pass
