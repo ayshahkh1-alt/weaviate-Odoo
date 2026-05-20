@@ -10,13 +10,22 @@ from weaviate.classes.init import Auth
 
 from openai import OpenAI
 
+# =========================
+# 🔄 LOAD ENV
+# =========================
+
 load_dotenv()
+
+# =========================
+# 🚀 FASTAPI
+# =========================
 
 app = FastAPI()
 
 # =========================
 # ✅ CORS
 # =========================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,13 +35,16 @@ app.add_middleware(
 )
 
 # =========================
-# 🔗 Weaviate Connection
+# 🔗 WEAVIATE CONNECTION
 # =========================
+
 client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.getenv("WEAVIATE_URL"),
+
     auth_credentials=Auth.api_key(
         os.getenv("WEAVIATE_API_KEY")
     ),
+
     headers={
         "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
     }
@@ -41,8 +53,9 @@ client = weaviate.connect_to_weaviate_cloud(
 collection = client.collections.get("KnowledgeBase")
 
 # =========================
-# 🤖 OpenAI Client
+# 🤖 OPENAI CLIENT
 # =========================
+
 ai_client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
@@ -66,10 +79,9 @@ class Article(BaseModel):
 
 class Question(BaseModel):
     question: str
-    only_bouquets: bool = False   # ✅ FIXED
 
 # =========================
-# 🟣 PRODUCTS
+# 🌸 UPDATE FLOWER
 # =========================
 
 @app.post("/update-flower")
@@ -77,12 +89,15 @@ def update_flower(flower: Flower):
 
     collection.data.insert(
         properties={
+
             "type": "product",
+
             "name": flower.name,
             "color": flower.color,
             "price": flower.price,
             "available": flower.available,
             "image_url": flower.image_url,
+
             "text": f"""
 اسم المنتج: {flower.name}
 اللون: {flower.color}
@@ -92,10 +107,12 @@ def update_flower(flower: Flower):
         }
     )
 
-    return {"status": "product saved ✔"}
+    return {
+        "status": "product saved ✔"
+    }
 
 # =========================
-# 🟣 ARTICLES
+# 📚 UPDATE ARTICLE
 # =========================
 
 @app.post("/update-article")
@@ -103,9 +120,12 @@ def update_article(article: Article):
 
     collection.data.insert(
         properties={
+
             "type": "article",
+
             "title": article.title,
             "content": article.content,
+
             "text": f"""
 عنوان المقال:
 {article.title}
@@ -116,17 +136,19 @@ def update_article(article: Article):
         }
     )
 
-    return {"status": "article saved ✔"}
+    return {
+        "status": "article saved ✔"
+    }
 
 # =========================
-# 🔎 CHAT (RAG)
+# 🤖 CHAT (RAG)
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
     # =========================
-    # 🔍 SEARCH IN WEAVIATE
+    # 🔍 SEARCH
     # =========================
 
     results = collection.query.near_text(
@@ -134,8 +156,7 @@ def chat(data: Question):
         limit=8
     )
 
-    product_context = ""
-    article_context = ""
+    context = ""
 
     # =========================
     # 📦 BUILD CONTEXT
@@ -151,20 +172,23 @@ def chat(data: Question):
 
         if props.get("type") == "product":
 
-            name = props.get("name") or "غير متوفر"
-            color = props.get("color") or "غير متوفر"
-            price = props.get("price") or 0
-            available = props.get("available") or 0
-            image_url = props.get("image_url") or ""
+            context += f"""
+[منتج]
 
-            product_context += f"""
+الاسم:
+{props.get("name")}
 
-اسم المنتج: {name}
-اللون: {color}
-السعر: {price}
-الكمية المتوفرة: {available}
-رابط الصورة: {image_url}
+اللون:
+{props.get("color")}
 
+السعر:
+{props.get("price")}
+
+التوفر:
+{props.get("available")}
+
+رابط الصورة:
+{props.get("image_url")}
 """
 
         # =====================
@@ -173,17 +197,14 @@ def chat(data: Question):
 
         elif props.get("type") == "article":
 
-            title = props.get("title") or ""
-            content = props.get("content") or ""
+            context += f"""
+[مقال]
 
-            article_context += f"""
-
-عنوان المقال:
-{title}
+العنوان:
+{props.get("title")}
 
 المحتوى:
-{content}
-
+{props.get("content")}
 """
 
     # =========================
@@ -199,32 +220,23 @@ def chat(data: Question):
                 "role": "system",
 
                 "content": """
-أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
+أنت مساعد ذكي لمتجر زهور وهدايا.
 
-قواعد مهمة جدًا:
+استخدم المعلومات المرفقة فقط.
 
-- المنتجات هي المصدر الحقيقي الوحيد للأسعار والمخزون والتوفر.
-- ممنوع اختراع أي سعر أو كمية أو لون أو توفر.
-- إذا كانت المعلومة غير موجودة اكتب:
-غير متوفر
+ممنوع اختراع:
+- منتجات
+- أسعار
+- ألوان
+- توفر
 
-- لا تقل:
-خيار رائع
-أنيق
-عصري
-فخم
-إلا إذا كانت هذه المعلومات موجودة فعلًا.
+إذا طلب المستخدم صورة:
+لا تقل أنك لا تستطيع عرض الصور.
 
-- لا تخترع وصف تسويقي.
+إذا كانت هناك صور ضمن المنتجات:
+اذكر المنتج بشكل طبيعي.
 
-- إذا لم تجد معلومات كافية قل ذلك بوضوح.
-
-- كن مختصر وواضح.
-
-- إذا وُجدت عدة منتجات:
-رتبها بشكل مرتب وسهل القراءة.
-
-- لا تقل أنك لا تستطيع عرض الصور.
+كن مختصر وواضح ولطيف.
 """
             },
 
@@ -235,24 +247,15 @@ def chat(data: Question):
 سؤال المستخدم:
 {data.question}
 
-=========================
-المنتجات الحقيقية:
-=========================
-
-{product_context}
-
-=========================
-مقالات المعرفة:
-=========================
-
-{article_context}
+المعلومات:
+{context}
 """
             }
         ]
     )
 
     # =========================
-    # ✅ FINAL RESPONSE
+    # ✅ RETURN RESPONSE
     # =========================
 
     return {
@@ -273,6 +276,7 @@ def chat(data: Question):
             if obj.properties.get("type") == "product"
         ]
     }
+
 # =========================
 # 🔚 SHUTDOWN
 # =========================
