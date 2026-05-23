@@ -9,15 +9,15 @@ import weaviate
 from weaviate.classes.init import Auth
 
 from openai import OpenAI
+import json
 
 load_dotenv()
 
 app = FastAPI()
 
 # =========================
-# ✅ CORS
+# CORS
 # =========================
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,193 +27,143 @@ app.add_middleware(
 )
 
 # =========================
-# 🔗 Weaviate Connection
+# Weaviate
 # =========================
-
 client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.getenv("WEAVIATE_URL"),
-
-    auth_credentials=Auth.api_key(
-        os.getenv("WEAVIATE_API_KEY")
-    ),
-
-    headers={
-        "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
-    }
+    auth_credentials=Auth.api_key(os.getenv("WEAVIATE_API_KEY")),
+    headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")}
 )
 
-collection = client.collections.get("KnowledgeBase")
+collection = client.collections.get("products")
 
 # =========================
-# 🤖 OpenAI Client
+# OpenAI
 # =========================
-
-ai_client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+ai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # =========================
-# 🟢 MODELS
+# MEMORY
 # =========================
-
-class Flower(BaseModel):
-    name: str
-    color: str
-    price: float
-    available: float
-    image_url: str
-
-
-class Article(BaseModel):
-    title: str
-    content: str
-
+chat_memory = {}
 
 class Question(BaseModel):
+    session_id: str
     question: str
 
-# =========================
-# 🟣 PRODUCTS
-# =========================
-
-@app.post("/update-flower")
-def update_flower(flower: Flower):
-
-    collection.data.insert(
-        properties={
-
-            "type": "product",
-
-            "name": flower.name,
-            "color": flower.color,
-            "price": flower.price,
-            "available": flower.available,
-            "image_url": flower.image_url,
-
-            "text": f"""
-اسم المنتج: {flower.name}
-اللون: {flower.color}
-السعر: {flower.price}
-الكمية المتوفرة: {flower.available}
-"""
-        }
-    )
-
-    return {
-        "status": "product saved ✔"
-    }
 
 # =========================
-# 🟣 ARTICLES
+# MEMORY FUNCTION
 # =========================
+def build_memory(session_id, msg):
+    if session_id not in chat_memory:
+        chat_memory[session_id] = []
 
-@app.post("/update-article")
-def update_article(article: Article):
+    chat_memory[session_id].append({
+        "role": "user",
+        "content": msg
+    })
 
-    collection.data.insert(
-        properties={
+    return chat_memory[session_id][-10:]
 
-            "type": "article",
-
-            "title": article.title,
-            "content": article.content,
-
-            "text": f"""
-عنوان المقال:
-{article.title}
-
-المحتوى:
-{article.content}
-"""
-        }
-    )
-
-    return {
-        "status": "article saved ✔"
-    }
 
 # =========================
-# 🔎 CHAT (RAG)
+# CHAT ENDPOINT
 # =========================
-
 @app.post("/chat")
 def chat(data: Question):
 
     # =========================
-    # 🔍 SEARCH IN WEAVIATE
+    # 🧠 MEMORY
     # =========================
+    history = build_memory(data.session_id, data.question)
 
+    # =========================
+    # 🎯 INTENT EXTRACTION (JSON)
+    # =========================
+    intent_response = ai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": """
+استخرج فقط JSON:
+
+{
+  "occasion": null,
+  "color": null,
+  "product_type": null
+}
+"""
+            },
+            {
+                "role": "user",
+                "content": str(history)
+            }
+        ]
+    )
+
+    try:
+        intent = json.loads(intent_response.choices[0].message.content)
+    except:
+        intent = {"occasion": None, "color": None, "product_type": None}
+
+    # =========================
+    # 🔍 SEARCH QUERY
+    # =========================
+    query = data.question
+
+    if intent.get("occasion"):
+        query += f" {intent['occasion']}"
+
+    if intent.get("color"):
+        query += f" {intent['color']}"
+
+    if intent.get("product_type"):
+        query += f" {intent['product_type']}"
+
+    # =========================
+    # WEAVIATE SEARCH
+    # =========================
     results = collection.query.near_text(
-        query=data.question,
-        limit=8
+        query=query,
+        limit=6
     )
 
     context = ""
-
-    # =========================
-    # 📦 BUILD CONTEXT
-    # =========================
+    products = []
 
     for obj in results.objects:
+        p = obj.properties
 
-        props = obj.properties
+        # =========================
+        # COLOR FILTER (IMPORTANT)
+        # =========================
+        if intent.get("color"):
+            if p.get("color") and intent["color"].lower() not in p["color"].lower():
+                continue
 
-        # =====================
-        # 🌸 PRODUCTS
-        # =====================
+        products.append(p)
 
-        if props.get("type") == "product":
-
-            context += f"""
-
-[منتج]
-
-الاسم:
-{props.get("name")}
-
-اللون:
-{props.get("color")}
-
-السعر:
-{props.get("price")}
-
-التوفر:
-{props.get("available")}
-
-رابط الصورة:
-<img src="{props.get('image_url')}" width="250" />
-"""
-
-        # =====================
-        # 📚 ARTICLES
-        # =====================
-
-        elif props.get("type") == "article":
-
-            context += f"""
-
-[مقال]
-
-العنوان:
-{props.get("title")}
-
-المحتوى:
-{props.get("content")}
-
+        context += f"""
+اسم المنتج: {p.get('name')}
+اللون: {p.get('color')}
+السعر: {p.get('price')}
+الكمية: {p.get('available')}
 """
 
     # =========================
-    # 🤖 OPENAI RESPONSE
+    # 🤖 FINAL ANSWER
     # =========================
-
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
-
         messages=[
 
+            # =========================
+            # SYSTEM PROMPT (FULL RULES)
+            # =========================
             {
                 "role": "system",
-
                 "content": """
 أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
 
@@ -233,7 +183,6 @@ def chat(data: Question):
 - اسم المنتج
 - السعر
 - الألوان المتوفرة
-- توفر المنتج
 - واقترح أفضل الخيارات المناسبة
 
 4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
@@ -259,51 +208,66 @@ context
 ساعده بأسئلة ذكية حتى تصل للخيار المناسب.
 
 11- لا تقل أنك لا تستطيع عرض الصور.
+
 12- إذا كانت هناك صورة ضمن المنتج:
 اعرضها باستخدام HTML img tag.
+
+13- التزم فقط بالمعلومات الموجودة في البيانات التي تصلك من النظام.
+لا تخترع منتجات أو أسعار أو ألوان غير موجودة.
 """
             },
 
+            # =========================
+            # USER MESSAGE
+            # =========================
             {
                 "role": "user",
-
                 "content": f"""
+المحادثة السابقة:
+{history}
+
+المنتجات المتاحة:
+{context}
+
 سؤال المستخدم:
 {data.question}
-
-المعلومات المتوفرة:
-{context}
 """
             }
         ]
     )
 
-    # =========================
-    # ✅ FINAL RESPONSE
-    # =========================
+    answer = response.choices[0].message.content
 
+    # =========================
+    # SAVE MEMORY
+    # =========================
+    chat_memory[data.session_id].append({
+        "role": "assistant",
+        "content": answer
+    })
+
+    # =========================
+    # RESPONSE
+    # =========================
     return {
-
-        "answer": response.choices[0].message.content,
+        "answer": answer,
 
         "products": [
-
             {
-                "name": obj.properties.get("name"),
-                "price": obj.properties.get("price"),
-                "image_url": obj.properties.get("image_url")
+                "name": p.get("name"),
+                "price": p.get("price"),
+                "color": p.get("color"),
+                "image_url": p.get("image_url"),
+                "orderable": True
             }
-
-            for obj in results.objects
-
-            if obj.properties.get("type") == "product"
+            for p in products
         ]
     }
 
-# =========================
-# 🔚 CLOSE CONNECTION
-# =========================
 
+# =========================
+# CLOSE CONNECTION
+# =========================
 @app.on_event("shutdown")
-def shutdown_event():
+def shutdown():
     client.close()
