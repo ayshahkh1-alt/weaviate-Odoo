@@ -68,7 +68,7 @@ client = weaviate.connect_to_weaviate_cloud(
     }
 )
 
-collection = client.collections.get("KnowledgeBase")
+collection = client.collections.get("Products")
 
 print("Connected to Weaviate ✔")
 
