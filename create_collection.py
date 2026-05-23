@@ -3,40 +3,35 @@ from dotenv import load_dotenv
 
 import weaviate
 from weaviate.classes.init import Auth
-from weaviate.classes.config import Configure, Property, DataType
+from weaviate.classes.config import Configure
 
 load_dotenv()
 
 client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.getenv("WEAVIATE_URL"),
-    auth_credentials=Auth.api_key(os.getenv("WEAVIATE_API_KEY")),
-    headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")}
+
+    auth_credentials=Auth.api_key(
+        os.getenv("WEAVIATE_API_KEY")
+    ),
+
+    headers={
+        "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
+    }
 )
 
 print("Connected ✔")
 
-# حذف قديم
-if client.collections.exists("products"):
-    client.collections.delete("products")
-    print("Old collection deleted ✔")
 
-# إنشاء جديد
+# حذف القديم
+if client.collections.exists("KnowledgeBase"):
+    client.collections.delete("KnowledgeBase")
+
+
+# إنشاء الجديد مع OpenAI embeddings
 client.collections.create(
-    name="products",
+    name="KnowledgeBase",
 
-    vector_config=Configure.Vectors.text2vec_openai(
-        model="text-embedding-3-small"
-    ),
-
-    properties=[
-        Property(name="name", data_type=DataType.TEXT),
-        Property(name="color", data_type=DataType.TEXT),
-        Property(name="price", data_type=DataType.NUMBER),
-        Property(name="available", data_type=DataType.NUMBER),
-        Property(name="image_url", data_type=DataType.TEXT),
-        Property(name="product_url", data_type=DataType.TEXT),
-        Property(name="text", data_type=DataType.TEXT),
-    ]
+    vectorizer_config=Configure.Vectorizer.text2vec_openai()
 )
 
 print("Collection created ✔")
