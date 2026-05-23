@@ -1,13 +1,12 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 import os
 from dotenv import load_dotenv
 
 import weaviate
 from weaviate.classes.init import Auth
-
 from openai import OpenAI
 import json
 
@@ -27,7 +26,7 @@ app.add_middleware(
 )
 
 # =========================
-# Weaviate
+# WEAVIATE
 # =========================
 client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.getenv("WEAVIATE_URL"),
@@ -38,7 +37,7 @@ client = weaviate.connect_to_weaviate_cloud(
 collection = client.collections.get("products")
 
 # =========================
-# OpenAI
+# OPENAI
 # =========================
 ai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -52,17 +51,11 @@ class Question(BaseModel):
     question: str
 
 
-# =========================
-# MEMORY FUNCTION
-# =========================
 def build_memory(session_id, msg):
     if session_id not in chat_memory:
         chat_memory[session_id] = []
 
-    chat_memory[session_id].append({
-        "role": "user",
-        "content": msg
-    })
+    chat_memory[session_id].append({"role": "user", "content": msg})
 
     return chat_memory[session_id][-10:]
 
@@ -73,13 +66,10 @@ def build_memory(session_id, msg):
 @app.post("/chat")
 def chat(data: Question):
 
-    # =========================
-    # 🧠 MEMORY
-    # =========================
     history = build_memory(data.session_id, data.question)
 
     # =========================
-    # 🎯 INTENT EXTRACTION (JSON)
+    # INTENT
     # =========================
     intent_response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
@@ -87,8 +77,7 @@ def chat(data: Question):
             {
                 "role": "system",
                 "content": """
-استخرج فقط JSON:
-
+استخرج JSON فقط:
 {
   "occasion": null,
   "color": null,
@@ -109,128 +98,82 @@ def chat(data: Question):
         intent = {"occasion": None, "color": None, "product_type": None}
 
     # =========================
-    # 🔍 SEARCH QUERY
+    # QUERY
     # =========================
     query = data.question
 
     if intent.get("occasion"):
-        query += f" {intent['occasion']}"
+        query += " " + intent["occasion"]
 
     if intent.get("color"):
-        query += f" {intent['color']}"
+        query += " " + intent["color"]
 
     if intent.get("product_type"):
-        query += f" {intent['product_type']}"
+        query += " " + intent["product_type"]
 
     # =========================
-    # WEAVIATE SEARCH
+    # SEARCH
     # =========================
     results = collection.query.near_text(
         query=query,
-        limit=6
+        limit=8,
+        return_properties=[
+            "name",
+            "color",
+            "price",
+            "available",
+            "image_url",
+            "product_url"
+        ]
     )
 
-    context = ""
+    if not results.objects:
+        return {
+            "answer": "ما لقيت نتائج 😢 جرب وصف أوضح",
+            "products": []
+        }
+
     products = []
+
+    context = ""
 
     for obj in results.objects:
         p = obj.properties
 
-        # =========================
-        # COLOR FILTER (IMPORTANT)
-        # =========================
-        if intent.get("color"):
-            if p.get("color") and intent["color"].lower() not in p["color"].lower():
-                continue
-
         products.append(p)
 
         context += f"""
-اسم المنتج: {p.get('name')}
-اللون: {p.get('color')}
-السعر: {p.get('price')}
-الكمية: {p.get('available')}
+اسم: {p.get('name')}
+لون: {p.get('color')}
+سعر: {p.get('price')}
 """
 
     # =========================
-    # 🤖 FINAL ANSWER
+    # FINAL RESPONSE
     # =========================
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
 
-            # =========================
-            # SYSTEM PROMPT (FULL RULES)
-            # =========================
             {
                 "role": "system",
                 "content": """
-أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
+أنت مساعد متجر زهور.
 
-المعلومات التي تصلك تأتي من:
-- منتجات متجر حقيقية
-- مقالات قاعدة المعرفة
-
-مهامك:
-
-1- فهم سؤال المستخدم بدقة.
-
-2- إذا كان السؤال غير واضح:
-اسأل سؤال توضيحي قبل إعطاء الإجابة.
-
-3- إذا كان السؤال عن منتج:
-اذكر:
-- اسم المنتج
-- السعر
-- الألوان المتوفرة
-- واقترح أفضل الخيارات المناسبة
-
-4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
-لا تنسخ النص حرفيًا.
-استخرج المعلومة المهمة ثم اشرحها بأسلوب طبيعي ومختصر وواضح.
-
-5- إذا لم تجد معلومات كافية:
-قل ذلك بوضوح ولا تخترع معلومات.
-
-6- كن ودودًا ولطيفًا وكأنك موظف متجر حقيقي.
-
-7- إذا وُجدت عدة خيارات:
-رتبها بشكل مرتب وسهل القراءة.
-
-8- لا تذكر كلمات مثل:
-raw_data
-context
-
-9- إذا كان السؤال عن مناسبة:
-اقترح منتجات مناسبة حسب المناسبة.
-
-10- إذا كان المستخدم محتار:
-ساعده بأسئلة ذكية حتى تصل للخيار المناسب.
-
-11- لا تقل أنك لا تستطيع عرض الصور.
-
-12- إذا كانت هناك صورة ضمن المنتج:
-اعرضها باستخدام HTML img tag.
-
-13- التزم فقط بالمعلومات الموجودة في البيانات التي تصلك من النظام.
-لا تخترع منتجات أو أسعار أو ألوان غير موجودة.
+- اعرض المنتجات بشكل واضح
+- لا تخترع بيانات
+- استخدم فقط المعلومات المعطاة
+- إذا يوجد منتجات، اعرضها بشكل مرتب
 """
             },
 
-            # =========================
-            # USER MESSAGE
-            # =========================
             {
                 "role": "user",
                 "content": f"""
-المحادثة السابقة:
-{history}
+المستخدم: {data.question}
 
-المنتجات المتاحة:
+المنتجات:
 {context}
-
-سؤال المستخدم:
-{data.question}
 """
             }
         ]
@@ -238,36 +181,12 @@ context
 
     answer = response.choices[0].message.content
 
-    # =========================
-    # SAVE MEMORY
-    # =========================
     chat_memory[data.session_id].append({
         "role": "assistant",
         "content": answer
     })
 
-    # =========================
-    # RESPONSE
-    # =========================
     return {
         "answer": answer,
-
-        "products": [
-            {
-                "name": p.get("name"),
-                "price": p.get("price"),
-                "color": p.get("color"),
-                "image_url": p.get("image_url"),
-                "orderable": True
-            }
-            for p in products
-        ]
+        "products": products
     }
-
-
-# =========================
-# CLOSE CONNECTION
-# =========================
-@app.on_event("shutdown")
-def shutdown():
-    client.close()

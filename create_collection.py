@@ -5,38 +5,22 @@ import weaviate
 from weaviate.classes.init import Auth
 from weaviate.classes.config import Configure, Property, DataType
 
-# =========================
-# 🔐 Load env
-# =========================
 load_dotenv()
 
-WEAVIATE_URL = os.getenv("WEAVIATE_URL")
-WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# =========================
-# 🔗 Connect
-# =========================
 client = weaviate.connect_to_weaviate_cloud(
-    cluster_url=WEAVIATE_URL,
-    auth_credentials=Auth.api_key(WEAVIATE_API_KEY),
-    headers={
-        "X-OpenAI-Api-Key": OPENAI_API_KEY
-    }
+    cluster_url=os.getenv("WEAVIATE_URL"),
+    auth_credentials=Auth.api_key(os.getenv("WEAVIATE_API_KEY")),
+    headers={"X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")}
 )
 
 print("Connected ✔")
 
-# =========================
-# 🧹 Delete old collection
-# =========================
+# حذف قديم
 if client.collections.exists("products"):
     client.collections.delete("products")
     print("Old collection deleted ✔")
 
-# =========================
-# 📦 Create collection (FIXED)
-# =========================
+# إنشاء جديد
 client.collections.create(
     name="products",
 
@@ -45,17 +29,16 @@ client.collections.create(
     ),
 
     properties=[
-        Property(name="title", data_type=DataType.TEXT),
-        Property(name="description", data_type=DataType.TEXT),
+        Property(name="name", data_type=DataType.TEXT),
+        Property(name="color", data_type=DataType.TEXT),
         Property(name="price", data_type=DataType.NUMBER),
+        Property(name="available", data_type=DataType.NUMBER),
         Property(name="image_url", data_type=DataType.TEXT),
+        Property(name="product_url", data_type=DataType.TEXT),
+        Property(name="text", data_type=DataType.TEXT),
     ]
 )
 
 print("Collection created ✔")
 
-# =========================
-# 🔚 Close safely
-# =========================
 client.close()
-print("Connection closed ✔")
