@@ -62,6 +62,7 @@ class Flower(BaseModel):
     price: float
     available: float
     image_url: str
+    product_url: str
 
 
 class Article(BaseModel):
@@ -88,7 +89,12 @@ def update_flower(flower: Flower):
             "color": flower.color,
             "price": flower.price,
             "available": flower.available,
+
+            # ✅ الصورة
             "image_url": flower.image_url,
+
+            # ✅ رابط المنتج
+            "product_url": flower.product_url,
 
             "text": f"""
 اسم المنتج: {flower.name}
@@ -180,8 +186,18 @@ def chat(data: Question):
 التوفر:
 {props.get("available")}
 
-رابط الصورة:
-<img src="{props.get('image_url')}" width="250" />
+رابط المنتج:
+{props.get("product_url")}
+
+الصورة:
+
+<a href="{props.get('product_url')}" target="_blank">
+    <img 
+        src="{props.get('image_url')}" 
+        width="250"
+    />
+</a>
+
 """
 
         # =====================
@@ -233,6 +249,7 @@ def chat(data: Question):
 - اسم المنتج
 - السعر
 - الألوان المتوفرة
+- التوفر
 - واقترح أفضل الخيارات المناسبة
 
 4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
@@ -258,8 +275,12 @@ context
 ساعده بأسئلة ذكية حتى تصل للخيار المناسب.
 
 11- لا تقل أنك لا تستطيع عرض الصور.
+
 12- إذا كانت هناك صورة ضمن المنتج:
 اعرضها باستخدام HTML img tag.
+
+13- إذا توفر رابط المنتج:
+اعرض الصورة داخل clickable HTML link باستخدام a tag.
 """
             },
 
@@ -289,8 +310,12 @@ context
 
             {
                 "name": obj.properties.get("name"),
+
                 "price": obj.properties.get("price"),
-                "image_url": obj.properties.get("image_url")
+
+                "image_url": obj.properties.get("image_url"),
+
+                "product_url": obj.properties.get("product_url")
             }
 
             for obj in results.objects

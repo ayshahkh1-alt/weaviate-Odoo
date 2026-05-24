@@ -190,10 +190,18 @@ for p in products:
         )
 
         text = safe_text(f"""
-        المنتج: {p['name']}
-        السعر: {p['list_price']}
-        اللون/النوع: {v['name']}
-        الكمية: {v['qty_available']}
+       
+المنتج: {p['name']}
+السعر: {p['list_price']}
+اللون/النوع: {v['name']}
+الكمية: {v['qty_available']}
+
+رابط المنتج:
+{product_url}
+
+رابط الصورة:
+{variant_image}
+
         """)
 
         try:
