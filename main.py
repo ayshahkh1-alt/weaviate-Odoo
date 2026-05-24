@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # =========================
-# 🔗 Weaviate Connection
+# 🔗 WEAVIATE CONNECTION
 # =========================
 
 client = weaviate.connect_to_weaviate_cloud(
@@ -45,7 +45,7 @@ client = weaviate.connect_to_weaviate_cloud(
 collection = client.collections.get("KnowledgeBase")
 
 # =========================
-# 🤖 OpenAI Client
+# 🤖 OPENAI CLIENT
 # =========================
 
 ai_client = OpenAI(
@@ -73,8 +73,9 @@ class Article(BaseModel):
 class Question(BaseModel):
     question: str
 
+
 # =========================
-# 🟣 PRODUCTS
+# 🌸 SAVE PRODUCT
 # =========================
 
 @app.post("/update-flower")
@@ -90,17 +91,26 @@ def update_flower(flower: Flower):
             "price": flower.price,
             "available": flower.available,
 
-            # ✅ الصورة
+            # ✅ IMAGE
             "image_url": flower.image_url,
 
-            # ✅ رابط المنتج
+            # ✅ PRODUCT PAGE
             "product_url": flower.product_url,
 
             "text": f"""
 اسم المنتج: {flower.name}
+
 اللون: {flower.color}
+
 السعر: {flower.price}
+
 الكمية المتوفرة: {flower.available}
+
+رابط المنتج:
+{flower.product_url}
+
+رابط الصورة:
+{flower.image_url}
 """
         }
     )
@@ -109,8 +119,9 @@ def update_flower(flower: Flower):
         "status": "product saved ✔"
     }
 
+
 # =========================
-# 🟣 ARTICLES
+# 📚 SAVE ARTICLE
 # =========================
 
 @app.post("/update-article")
@@ -122,6 +133,7 @@ def update_article(article: Article):
             "type": "article",
 
             "title": article.title,
+
             "content": article.content,
 
             "text": f"""
@@ -138,15 +150,16 @@ def update_article(article: Article):
         "status": "article saved ✔"
     }
 
+
 # =========================
-# 🔎 CHAT (RAG)
+# 🤖 CHAT
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
     # =========================
-    # 🔍 SEARCH IN WEAVIATE
+    # 🔍 SEARCH
     # =========================
 
     results = collection.query.near_text(
@@ -189,12 +202,14 @@ def chat(data: Question):
 رابط المنتج:
 {props.get("product_url")}
 
-الصورة:
+الصورة الجاهزة للعرض:
 
 <a href="{props.get('product_url')}" target="_blank">
     <img 
         src="{props.get('image_url')}" 
+        alt="{props.get('name')}"
         width="250"
+        style="border-radius:10px;"
     />
 </a>
 
@@ -237,50 +252,48 @@ def chat(data: Question):
 - منتجات متجر حقيقية
 - مقالات قاعدة المعرفة
 
-مهامك:
+تعليمات مهمة جداً:
 
 1- فهم سؤال المستخدم بدقة.
 
 2- إذا كان السؤال غير واضح:
-اسأل سؤال توضيحي قبل إعطاء الإجابة.
+اسأل سؤال توضيحي قبل الإجابة.
 
 3- إذا كان السؤال عن منتج:
 اذكر:
 - اسم المنتج
 - السعر
-- الألوان المتوفرة
+- اللون
 - التوفر
-- واقترح أفضل الخيارات المناسبة
 
-4- إذا كان السؤال يعتمد على مقالات قاعدة المعرفة:
-لا تنسخ النص حرفيًا.
-استخرج المعلومة المهمة ثم اشرحها بأسلوب طبيعي ومختصر وواضح.
+4- إذا وجدت صورة أو رابط منتج:
+اعرض الصورة مباشرة باستخدام HTML فقط.
 
-5- إذا لم تجد معلومات كافية:
-قل ذلك بوضوح ولا تخترع معلومات.
+5- ممنوع استخدام Markdown links نهائياً.
 
-6- كن ودودًا ولطيفًا وكأنك موظف متجر حقيقي.
+6- استخدم دائماً هذا الشكل:
 
-7- إذا وُجدت عدة خيارات:
-رتبها بشكل مرتب وسهل القراءة.
+<a href="PRODUCT_URL" target="_blank">
+   <img src="IMAGE_URL" width="250"/>
+</a>
 
-8- لا تذكر كلمات مثل:
-raw_data
-context
+7- لا تقل:
+- raw_data
+- context
 
-9- إذا كان السؤال عن مناسبة:
-اقترح منتجات مناسبة حسب المناسبة.
+8- إذا لم تجد معلومة:
+قل ذلك بوضوح.
 
-10- إذا كان المستخدم محتار:
-ساعده بأسئلة ذكية حتى تصل للخيار المناسب.
+9- كن ودوداً وكأنك موظف متجر حقيقي.
 
-11- لا تقل أنك لا تستطيع عرض الصور.
+10- إذا وجدت عدة منتجات:
+رتبها بشكل جميل وواضح.
 
-12- إذا كانت هناك صورة ضمن المنتج:
-اعرضها باستخدام HTML img tag.
+11- لا تطبع روابط الصور كنص.
+اعرض الصور مباشرة.
 
-13- إذا توفر رابط المنتج:
-اعرض الصورة داخل clickable HTML link باستخدام a tag.
+12- لا تشرح HTML.
+فقط استخدمه داخل الإجابة.
 """
             },
 
@@ -311,7 +324,11 @@ context
             {
                 "name": obj.properties.get("name"),
 
+                "color": obj.properties.get("color"),
+
                 "price": obj.properties.get("price"),
+
+                "available": obj.properties.get("available"),
 
                 "image_url": obj.properties.get("image_url"),
 
@@ -323,6 +340,7 @@ context
             if obj.properties.get("type") == "product"
         ]
     }
+
 
 # =========================
 # 🔚 CLOSE CONNECTION
