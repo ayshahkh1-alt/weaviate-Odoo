@@ -32,11 +32,9 @@ app.add_middleware(
 
 client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.getenv("WEAVIATE_URL"),
-
     auth_credentials=Auth.api_key(
         os.getenv("WEAVIATE_API_KEY")
     ),
-
     headers={
         "X-OpenAI-Api-Key": os.getenv("OPENAI_API_KEY")
     }
@@ -83,41 +81,24 @@ def update_flower(flower: Flower):
 
     collection.data.insert(
         properties={
-
             "type": "product",
-
             "name": flower.name,
             "color": flower.color,
             "price": flower.price,
             "available": flower.available,
-
-            # ✅ IMAGE
             "image_url": flower.image_url,
-
-            # ✅ PRODUCT PAGE
             "product_url": flower.product_url,
-
             "text": f"""
 اسم المنتج: {flower.name}
-
 اللون: {flower.color}
-
 السعر: {flower.price}
-
-الكمية المتوفرة: {flower.available}
-
-رابط المنتج:
-{flower.product_url}
-
-رابط الصورة:
-{flower.image_url}
+التوفر: {flower.available}
+رابط المنتج: {flower.product_url}
 """
         }
     )
 
-    return {
-        "status": "product saved ✔"
-    }
+    return {"status": "product saved ✔"}
 
 
 # =========================
@@ -129,30 +110,21 @@ def update_article(article: Article):
 
     collection.data.insert(
         properties={
-
             "type": "article",
-
             "title": article.title,
-
             "content": article.content,
-
             "text": f"""
-عنوان المقال:
-{article.title}
-
-المحتوى:
-{article.content}
+عنوان المقال: {article.title}
+المحتوى: {article.content}
 """
         }
     )
 
-    return {
-        "status": "article saved ✔"
-    }
+    return {"status": "article saved ✔"}
 
 
 # =========================
-# 🤖 CHAT
+# 🤖 CHAT ENDPOINT
 # =========================
 
 @app.post("/chat")
@@ -167,69 +139,37 @@ def chat(data: Question):
         limit=8
     )
 
-    context = ""
+    # =========================
+    # 📦 BUILD CONTEXT (NO HTML)
+    # =========================
 
-    # =========================
-    # 📦 BUILD CONTEXT
-    # =========================
+    context = ""
 
     for obj in results.objects:
 
         props = obj.properties
 
-        # =====================
-        # 🌸 PRODUCTS
-        # =====================
-
         if props.get("type") == "product":
 
             context += f"""
-
 [منتج]
 
-الاسم:
-{props.get("name")}
-
-اللون:
-{props.get("color")}
-
-السعر:
-{props.get("price")}
-
-التوفر:
-{props.get("available")}
-
-رابط المنتج:
-{props.get("product_url")}
-
-الصورة الجاهزة للعرض:
-
-<a href="{props.get('product_url')}" target="_blank">
-    <img 
-        src="{props.get('image_url')}" 
-        alt="{props.get('name')}"
-        width="250"
-        style="border-radius:10px;"
-    />
-</a>
+الاسم: {props.get("name")}
+اللون: {props.get("color")}
+السعر: {props.get("price")}
+التوفر: {props.get("available")}
+رابط المنتج: {props.get("product_url")}
+الصورة: IMAGE:{props.get("image_url")}
 
 """
-
-        # =====================
-        # 📚 ARTICLES
-        # =====================
 
         elif props.get("type") == "article":
 
             context += f"""
-
 [مقال]
 
-العنوان:
-{props.get("title")}
-
-المحتوى:
-{props.get("content")}
+العنوان: {props.get("title")}
+المحتوى: {props.get("content")}
 
 """
 
@@ -239,77 +179,35 @@ def chat(data: Question):
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
-
         messages=[
 
             {
                 "role": "system",
-
                 "content": """
-أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
+أنت مساعد ذكي لمتجر زهور وهدايا.
 
-المعلومات التي تصلك تأتي من:
-- منتجات متجر حقيقية
-- مقالات قاعدة المعرفة
+تعليمات مهمة:
 
-تعليمات مهمة جداً:
+- لا تستخدم HTML نهائياً
+- لا تستخدم Markdown
+- إذا أردت عرض صورة استخدم فقط:
 
-1- فهم سؤال المستخدم بدقة.
+IMAGE:رابط_الصورة
 
-2- إذا كان السؤال غير واضح:
-اسأل سؤال توضيحي قبل الإجابة.
-
-3- إذا كان السؤال عن منتج:
-اذكر:
-- اسم المنتج
-- السعر
-- اللون
-- التوفر
-
-4- إذا وجدت صورة أو رابط منتج:
-اعرض الصورة مباشرة باستخدام HTML فقط.
-
-5- ممنوع استخدام Markdown links نهائياً.
-
-6- استخدم دائماً هذا الشكل:
-
-<a href="PRODUCT_URL" target="_blank">
-   <img src="IMAGE_URL" width="250"/>
-</a>
-
-7- لا تقل:
-- raw_data
-- context
-
-8- إذا لم تجد معلومة:
-قل ذلك بوضوح.
-
-9- كن ودوداً وكأنك موظف متجر حقيقي.
-
-10- إذا وجدت عدة منتجات:
-رتبها بشكل جميل وواضح.
-
-11- لا تطبع روابط الصور كنص.
-اعرض الصور مباشرة.
-
-12- لا تشرح HTML.
-فقط استخدمه داخل الإجابة.
-لا تعرض المنتجات كنص طويل.
-
-اكتب وصف قصير فقط.
-
-المنتجات سيتم عرضها تلقائياً بالكروت.
+- يمكن وضع الصورة داخل النص في أي مكان
+- اكتب ردود قصيرة وواضحة
+- إذا يوجد منتجات متعددة اعرضها بشكل مرتب
+- كن مساعد متجر حقيقي وودود
 """
             },
 
             {
                 "role": "user",
-
                 "content": f"""
 سؤال المستخدم:
 {data.question}
 
-المعلومات المتوفرة:
+البيانات:
 {context}
 """
             }
@@ -317,31 +215,22 @@ def chat(data: Question):
     )
 
     # =========================
-    # ✅ FINAL RESPONSE
+    # ✅ RESPONSE
     # =========================
 
     return {
-
         "answer": response.choices[0].message.content,
 
         "products": [
-
             {
                 "name": obj.properties.get("name"),
-
                 "color": obj.properties.get("color"),
-
                 "price": obj.properties.get("price"),
-
                 "available": obj.properties.get("available"),
-
                 "image_url": obj.properties.get("image_url"),
-
                 "product_url": obj.properties.get("product_url")
             }
-
             for obj in results.objects
-
             if obj.properties.get("type") == "product"
         ]
     }
