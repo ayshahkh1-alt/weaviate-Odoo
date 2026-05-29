@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -182,6 +181,8 @@ def chat(data: Question):
 
     filtered_products = []
 
+    allowed_product_names = []
+
     for obj in results.objects:
 
         props = obj.properties
@@ -205,6 +206,10 @@ def chat(data: Question):
                 "image_url": props.get("image_url"),
                 "product_url": props.get("product_url")
             })
+
+            allowed_product_names.append(
+                props.get("name")
+            )
 
             context += f"""
 
@@ -235,6 +240,28 @@ def chat(data: Question):
 """
 
     # =========================
+    # ❌ NO PRODUCTS
+    # =========================
+
+    if len(filtered_products) == 0:
+
+        return {
+            "answer": (
+                "ممكن توضّح أكثر 😊 "
+                "شو نوع الهدية أو المناسبة اللي بدك إياها؟"
+            ),
+            "products": []
+        }
+
+    # =========================
+    # ✅ ALLOWED PRODUCTS
+    # =========================
+
+    allowed_products_text = ", ".join(
+        allowed_product_names
+    )
+
+    # =========================
     # 🤖 SYSTEM PROMPT
     # =========================
 
@@ -242,7 +269,7 @@ def chat(data: Question):
 
         {
             "role": "system",
-            "content": """
+            "content": f"""
 أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
 
 تصرف كبائع محترف داخل متجر حقيقي.
@@ -254,12 +281,24 @@ def chat(data: Question):
 - ممنوع قول "تفضل"
 - ممنوع الردود القصيرة جداً
 - لا تكرر نفس الجمل
-- إذا لم تفهم طلب المستخدم اسأله سؤالاً توضيحياً
-- إذا لم تجد نتائج مناسبة اطلب تفاصيل أكثر
 - كن ودوداً وطبيعياً
-- تصرف كإنسان حقيقي
+- إذا لم تفهم المستخدم اسأله سؤال توضيحي
 
-أمثلة:
+مهم جداً:
+
+- ممنوع اقتراح أي منتج غير موجود
+- ممنوع اختراع منتجات
+- ممنوع تخمين أسماء منتجات
+- اعرض فقط المنتجات الموجودة داخل البيانات
+- إذا لم تجد منتج مناسب اطلب تفاصيل أكثر
+
+المنتجات المسموح ذكرها فقط:
+
+{allowed_products_text}
+
+ممنوع ذكر أي منتج غير موجود بالقائمة السابقة.
+
+أمثلة ممتازة:
 
 إذا قال المستخدم:
 "بدي بوكيه"
@@ -283,8 +322,6 @@ def chat(data: Question):
 
 - ممنوع HTML
 - ممنوع Markdown
-- كل رد يجب أن يحتوي مساعدة حقيقية أو سؤال واضح
-- إذا كان المستخدم يشرح طلبه تابع معه ولا تقطع الحوار
 
 إذا أردت عرض صورة استخدم فقط:
 IMAGE:رابط_الصورة
@@ -358,13 +395,14 @@ IMAGE:رابط_الصورة
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        temperature=1
+        temperature=0.7,
+        max_tokens=300
     )
 
     answer = response.choices[0].message.content.strip()
 
     # =========================
-    # 🚫 REMOVE BAD ANSWERS
+    # 🚫 BAD ANSWERS
     # =========================
 
     bad_words = [
@@ -376,13 +414,22 @@ IMAGE:رابط_الصورة
 
     if (
         answer in bad_words
-        or len(answer) < 8
+        or len(answer) < 15
     ):
 
-        answer = (
-            "أكيد 😊 "
-            "ممكن تحكيلي أكثر شو نوع البوكيه أو المناسبة اللي بدك إياها؟"
-        )
+        first_product = filtered_products[0]
+
+        answer = f"""
+أكيد 😊
+
+أنصحك بهذا المنتج:
+
+{first_product['name']}
+
+السعر: {first_product['price']}
+
+IMAGE:{first_product['image_url']}
+"""
 
     # =========================
     # 💾 SAVE ASSISTANT MESSAGE
@@ -432,4 +479,3 @@ def clear_memory(session_id: str):
 @app.on_event("shutdown")
 def shutdown_event():
     client.close()
-
