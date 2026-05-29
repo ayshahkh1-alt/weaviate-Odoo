@@ -1,3 +1,4 @@
+id="fullsmartchat"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -59,7 +60,7 @@ ai_client = OpenAI(
 )
 
 # =========================
-# 🧠 MEMORY STORE
+# 🧠 CHAT MEMORY
 # =========================
 
 chat_memory = {}
@@ -113,7 +114,9 @@ def update_flower(flower: Flower):
         }
     )
 
-    return {"status": "product saved ✔"}
+    return {
+        "status": "product saved ✔"
+    }
 
 
 # =========================
@@ -135,18 +138,32 @@ def update_article(article: Article):
         }
     )
 
-    return {"status": "article saved ✔"}
+    return {
+        "status": "article saved ✔"
+    }
 
 
 # =========================
-# 🤖 CHAT ENDPOINT
+# 🤖 CHAT
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
+    question = data.question.strip()
+
     # =========================
-    # 🧠 MEMORY
+    # ❌ EMPTY MESSAGE
+    # =========================
+
+    if len(question) < 2:
+        return {
+            "answer": "ممكن توضح أكثر 😊",
+            "products": []
+        }
+
+    # =========================
+    # 🧠 MEMORY INIT
     # =========================
 
     if data.session_id not in chat_memory:
@@ -159,7 +176,7 @@ def chat(data: Question):
     # =========================
 
     results = collection.query.near_text(
-        query=data.question,
+        query=question,
         limit=8,
         return_metadata=["distance"]
     )
@@ -177,9 +194,13 @@ def chat(data: Question):
         props = obj.properties
         distance = obj.metadata.distance
 
-        # Ignore weak results
+        # تجاهل النتائج الضعيفة
         if distance > 0.35:
             continue
+
+        # =========================
+        # 🌸 PRODUCT
+        # =========================
 
         if props.get("type") == "product":
 
@@ -205,6 +226,10 @@ def chat(data: Question):
 
 """
 
+        # =========================
+        # 📚 ARTICLE
+        # =========================
+
         elif props.get("type") == "article":
 
             context += f"""
@@ -217,7 +242,7 @@ def chat(data: Question):
 """
 
     # =========================
-    # 🧠 BUILD MESSAGES
+    # 🤖 SYSTEM PROMPT
     # =========================
 
     messages = [
@@ -229,33 +254,64 @@ def chat(data: Question):
 
 تصرف كبائع محترف داخل متجر حقيقي.
 
-قواعد مهمة جداً:
+مهم جداً:
 
-- اقرأ كامل المحادثة قبل الرد
-- إذا لم تفهم طلب المستخدم اسأله سؤال توضيحي
-- لا تخترع منتجات غير موجودة
-- إذا لم تجد نتائج مناسبة اطلب توضيحاً
-- كن ودوداً ومختصراً
-- ساعد المستخدم على اختيار أفضل هدية
-- اقترح منتجات مناسبة حسب المناسبة والميزانية
-- حاول البيع بطريقة لطيفة واحترافية
+- اقرأ المحادثة كاملة قبل الرد
+- لا تكرر نفس الجمل
+- لا تقل "تفضل" دائماً
+- لا تعطِ ردود قصيرة جداً بدون فائدة
+- إذا لم تفهم طلب المستخدم اسأله سؤالاً توضيحياً
+- إذا لم تجد نتائج مناسبة اطلب تفاصيل أكثر
+- كن ودوداً وطبيعياً
+- تصرف كإنسان حقيقي
 
-تنسيق الرد:
+طريقة المساعدة:
 
-- ممنوع HTML
-- ممنوع Markdown
-- إذا أردت عرض صورة استخدم فقط:
+- ساعد المستخدم باختيار أفضل هدية
+- اسأله عن المناسبة
+- اسأله عن الميزانية
+- اسأله عن اللون المفضل
+- اقترح منتجات مناسبة حسب طلبه
+
+أمثلة ممتازة:
+
+إذا قال:
+"بدي بوكيه"
+
+قل:
+"أكيد 😊 لأي مناسبة بدك البوكيه؟"
+
+إذا قال:
+"بدي هدية"
+
+قل:
+"أكيد 😊 لمين الهدية؟ وكم الميزانية تقريباً؟"
+
+إذا قال:
+"بدي بوكيه خطبة"
+
+قل:
+"رائع ✨ بتحب يكون ستايل البوكيه ناعم ولا فخم؟"
+
+ممنوع:
+
+- HTML
+- Markdown
+- تكرار نفس الردود
+- اختراع منتجات غير موجودة
+
+إذا أردت عرض صورة استخدم:
 IMAGE:رابط_الصورة
 
-- يمكن وضع الصور داخل الرد
-- اجعل الرد مرتباً وواضحاً
+إذا وجدت منتجات:
+اعرضها بشكل مرتب مع وصف بسيط لكل منتج.
 """
         }
 
     ]
 
     # =========================
-    # 🧠 ADD HISTORY
+    # 🧠 ADD MEMORY
     # =========================
 
     messages.extend(history[-12:])
@@ -276,12 +332,12 @@ IMAGE:رابط_الصورة
         })
 
     # =========================
-    # ❓ USER MESSAGE
+    # 👤 USER MESSAGE
     # =========================
 
     messages.append({
         "role": "user",
-        "content": data.question
+        "content": question
     })
 
     # =========================
@@ -290,20 +346,38 @@ IMAGE:رابط_الصورة
 
     history.append({
         "role": "user",
-        "content": data.question
+        "content": question
     })
 
     # =========================
-    # 🤖 OPENAI RESPONSE
+    # 🤖 AI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        temperature=0.7
+        temperature=1
     )
 
-    answer = response.choices[0].message.content
+    answer = response.choices[0].message.content.strip()
+
+    # =========================
+    # 🚫 ANTI REPETITION
+    # =========================
+
+    bad_answers = [
+        "تفضل",
+        "تفضل 🌸",
+        "أكيد",
+        "نعم",
+    ]
+
+    if answer in bad_answers:
+
+        answer = (
+            "أكيد 😊 "
+            "ممكن تحكيلي أكثر شو النوع أو المناسبة اللي بدك إياها؟"
+        )
 
     # =========================
     # 💾 SAVE ASSISTANT MESSAGE
@@ -347,7 +421,7 @@ def clear_memory(session_id: str):
 
 
 # =========================
-# 🔚 CLOSE CONNECTION
+# 🔚 SHUTDOWN
 # =========================
 
 @app.on_event("shutdown")
