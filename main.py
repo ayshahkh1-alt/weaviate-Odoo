@@ -10,7 +10,15 @@ from weaviate.classes.init import Auth
 
 from openai import OpenAI
 
+# =========================
+# 🔥 LOAD ENV
+# =========================
+
 load_dotenv()
+
+# =========================
+# 🚀 FASTAPI
+# =========================
 
 app = FastAPI()
 
@@ -51,6 +59,12 @@ ai_client = OpenAI(
 )
 
 # =========================
+# 🧠 MEMORY STORE
+# =========================
+
+chat_memory = {}
+
+# =========================
 # 🟢 MODELS
 # =========================
 
@@ -69,6 +83,7 @@ class Article(BaseModel):
 
 
 class Question(BaseModel):
+    session_id: str
     question: str
 
 
@@ -131,27 +146,54 @@ def update_article(article: Article):
 def chat(data: Question):
 
     # =========================
+    # 🧠 MEMORY
+    # =========================
+
+    if data.session_id not in chat_memory:
+        chat_memory[data.session_id] = []
+
+    history = chat_memory[data.session_id]
+
+    # =========================
     # 🔍 SEARCH
     # =========================
 
     results = collection.query.near_text(
         query=data.question,
-        limit=8
+        limit=8,
+        return_metadata=["distance"]
     )
 
     # =========================
-    # 📦 BUILD CONTEXT (NO HTML)
+    # 📦 BUILD CONTEXT
     # =========================
 
     context = ""
 
+    filtered_products = []
+
     for obj in results.objects:
 
         props = obj.properties
+        distance = obj.metadata.distance
+
+        # Ignore weak results
+        if distance > 0.35:
+            continue
 
         if props.get("type") == "product":
 
+            filtered_products.append({
+                "name": props.get("name"),
+                "color": props.get("color"),
+                "price": props.get("price"),
+                "available": props.get("available"),
+                "image_url": props.get("image_url"),
+                "product_url": props.get("product_url")
+            })
+
             context += f"""
+
 [منتج]
 
 الاسم: {props.get("name")}
@@ -166,6 +208,7 @@ def chat(data: Question):
         elif props.get("type") == "article":
 
             context += f"""
+
 [مقال]
 
 العنوان: {props.get("title")}
@@ -174,65 +217,132 @@ def chat(data: Question):
 """
 
     # =========================
+    # 🧠 BUILD MESSAGES
+    # =========================
+
+    messages = [
+
+        {
+            "role": "system",
+            "content": """
+أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
+
+تصرف كبائع محترف داخل متجر حقيقي.
+
+قواعد مهمة جداً:
+
+- اقرأ كامل المحادثة قبل الرد
+- إذا لم تفهم طلب المستخدم اسأله سؤال توضيحي
+- لا تخترع منتجات غير موجودة
+- إذا لم تجد نتائج مناسبة اطلب توضيحاً
+- كن ودوداً ومختصراً
+- ساعد المستخدم على اختيار أفضل هدية
+- اقترح منتجات مناسبة حسب المناسبة والميزانية
+- حاول البيع بطريقة لطيفة واحترافية
+
+تنسيق الرد:
+
+- ممنوع HTML
+- ممنوع Markdown
+- إذا أردت عرض صورة استخدم فقط:
+IMAGE:رابط_الصورة
+
+- يمكن وضع الصور داخل الرد
+- اجعل الرد مرتباً وواضحاً
+"""
+        }
+
+    ]
+
+    # =========================
+    # 🧠 ADD HISTORY
+    # =========================
+
+    messages.extend(history[-12:])
+
+    # =========================
+    # 📦 ADD CONTEXT
+    # =========================
+
+    if context:
+
+        messages.append({
+            "role": "system",
+            "content": f"""
+معلومات من قاعدة البيانات:
+
+{context}
+"""
+        })
+
+    # =========================
+    # ❓ USER MESSAGE
+    # =========================
+
+    messages.append({
+        "role": "user",
+        "content": data.question
+    })
+
+    # =========================
+    # 💾 SAVE USER MESSAGE
+    # =========================
+
+    history.append({
+        "role": "user",
+        "content": data.question
+    })
+
+    # =========================
     # 🤖 OPENAI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-
-            {
-                "role": "system",
-                "content": """
-أنت مساعد ذكي لمتجر زهور وهدايا.
-
-تعليمات مهمة:
-
-- لا تستخدم HTML نهائياً
-- لا تستخدم Markdown
-- إذا أردت عرض صورة استخدم فقط:
-
-IMAGE:رابط_الصورة
-
-- يمكن وضع الصورة داخل النص في أي مكان
-- اكتب ردود قصيرة وواضحة
-- إذا يوجد منتجات متعددة اعرضها بشكل مرتب
-- كن مساعد متجر حقيقي وودود
-"""
-            },
-
-            {
-                "role": "user",
-                "content": f"""
-سؤال المستخدم:
-{data.question}
-
-البيانات:
-{context}
-"""
-            }
-        ]
+        messages=messages,
+        temperature=0.7
     )
+
+    answer = response.choices[0].message.content
+
+    # =========================
+    # 💾 SAVE ASSISTANT MESSAGE
+    # =========================
+
+    history.append({
+        "role": "assistant",
+        "content": answer
+    })
+
+    # =========================
+    # ✂️ LIMIT MEMORY
+    # =========================
+
+    if len(history) > 20:
+        chat_memory[data.session_id] = history[-20:]
 
     # =========================
     # ✅ RESPONSE
     # =========================
 
     return {
-        "answer": response.choices[0].message.content,
+        "answer": answer,
+        "products": filtered_products
+    }
 
-        "products": [
-            {
-                "name": obj.properties.get("name"),
-                "color": obj.properties.get("color"),
-                "price": obj.properties.get("price"),
-                "available": obj.properties.get("available"),
-                "image_url": obj.properties.get("image_url"),
-                "product_url": obj.properties.get("product_url")
-            }
-            for obj in results.objects
-            if obj.properties.get("type") == "product"
-        ]
+
+# =========================
+# 🧹 CLEAR MEMORY
+# =========================
+
+@app.delete("/clear-memory/{session_id}")
+def clear_memory(session_id: str):
+
+    if session_id in chat_memory:
+        del chat_memory[session_id]
+
+    return {
+        "status": "memory cleared ✔"
     }
 
 
