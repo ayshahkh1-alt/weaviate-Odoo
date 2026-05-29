@@ -1,4 +1,3 @@
-id="fullsmartchat"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,15 +10,7 @@ from weaviate.classes.init import Auth
 
 from openai import OpenAI
 
-# =========================
-# 🔥 LOAD ENV
-# =========================
-
 load_dotenv()
-
-# =========================
-# 🚀 FASTAPI
-# =========================
 
 app = FastAPI()
 
@@ -114,9 +105,7 @@ def update_flower(flower: Flower):
         }
     )
 
-    return {
-        "status": "product saved ✔"
-    }
+    return {"status": "product saved ✔"}
 
 
 # =========================
@@ -138,32 +127,29 @@ def update_article(article: Article):
         }
     )
 
-    return {
-        "status": "article saved ✔"
-    }
+    return {"status": "article saved ✔"}
 
 
 # =========================
-# 🤖 CHAT
+# 🤖 CHAT ENDPOINT
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
-    question = data.question.strip()
-
     # =========================
     # ❌ EMPTY MESSAGE
     # =========================
 
-    if len(question) < 2:
+    if len(data.question.strip()) < 2:
+
         return {
-            "answer": "ممكن توضح أكثر 😊",
+            "answer": "ممكن توضّح أكثر 😊",
             "products": []
         }
 
     # =========================
-    # 🧠 MEMORY INIT
+    # 🧠 MEMORY
     # =========================
 
     if data.session_id not in chat_memory:
@@ -176,7 +162,7 @@ def chat(data: Question):
     # =========================
 
     results = collection.query.near_text(
-        query=question,
+        query=data.question,
         limit=8,
         return_metadata=["distance"]
     )
@@ -254,28 +240,19 @@ def chat(data: Question):
 
 تصرف كبائع محترف داخل متجر حقيقي.
 
-مهم جداً:
+تعليمات مهمة جداً:
 
 - اقرأ المحادثة كاملة قبل الرد
+- لا تكرر كلمة "تفضل"
 - لا تكرر نفس الجمل
-- لا تقل "تفضل" دائماً
-- لا تعطِ ردود قصيرة جداً بدون فائدة
 - إذا لم تفهم طلب المستخدم اسأله سؤالاً توضيحياً
 - إذا لم تجد نتائج مناسبة اطلب تفاصيل أكثر
 - كن ودوداً وطبيعياً
 - تصرف كإنسان حقيقي
 
-طريقة المساعدة:
+أمثلة:
 
-- ساعد المستخدم باختيار أفضل هدية
-- اسأله عن المناسبة
-- اسأله عن الميزانية
-- اسأله عن اللون المفضل
-- اقترح منتجات مناسبة حسب طلبه
-
-أمثلة ممتازة:
-
-إذا قال:
+إذا قال المستخدم:
 "بدي بوكيه"
 
 قل:
@@ -285,26 +262,24 @@ def chat(data: Question):
 "بدي هدية"
 
 قل:
-"أكيد 😊 لمين الهدية؟ وكم الميزانية تقريباً؟"
+"لمين الهدية؟ وكم الميزانية تقريباً؟"
 
 إذا قال:
 "بدي بوكيه خطبة"
 
 قل:
-"رائع ✨ بتحب يكون ستايل البوكيه ناعم ولا فخم؟"
+"بتحب يكون البوكيه ناعم ولا فخم؟"
 
-ممنوع:
+قواعد الرد:
 
-- HTML
-- Markdown
-- تكرار نفس الردود
-- اختراع منتجات غير موجودة
+- ممنوع HTML
+- ممنوع Markdown
 
-إذا أردت عرض صورة استخدم:
+إذا أردت عرض صورة استخدم فقط:
 IMAGE:رابط_الصورة
 
-إذا وجدت منتجات:
-اعرضها بشكل مرتب مع وصف بسيط لكل منتج.
+إذا وجدت منتجات مناسبة:
+اعرضها بشكل مرتب مع وصف بسيط.
 """
         }
 
@@ -320,16 +295,14 @@ IMAGE:رابط_الصورة
     # 📦 ADD CONTEXT
     # =========================
 
-    if context:
-
-        messages.append({
-            "role": "system",
-            "content": f"""
+    messages.append({
+        "role": "system",
+        "content": f"""
 معلومات من قاعدة البيانات:
 
 {context}
 """
-        })
+    })
 
     # =========================
     # 👤 USER MESSAGE
@@ -337,7 +310,7 @@ IMAGE:رابط_الصورة
 
     messages.append({
         "role": "user",
-        "content": question
+        "content": data.question
     })
 
     # =========================
@@ -346,11 +319,11 @@ IMAGE:رابط_الصورة
 
     history.append({
         "role": "user",
-        "content": question
+        "content": data.question
     })
 
     # =========================
-    # 🤖 AI RESPONSE
+    # 🤖 OPENAI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
@@ -369,14 +342,14 @@ IMAGE:رابط_الصورة
         "تفضل",
         "تفضل 🌸",
         "أكيد",
-        "نعم",
+        "نعم"
     ]
 
     if answer in bad_answers:
 
         answer = (
             "أكيد 😊 "
-            "ممكن تحكيلي أكثر شو النوع أو المناسبة اللي بدك إياها؟"
+            "ممكن توضّح أكثر شو النوع أو المناسبة اللي بدك إياها؟"
         )
 
     # =========================
@@ -421,7 +394,7 @@ def clear_memory(session_id: str):
 
 
 # =========================
-# 🔚 SHUTDOWN
+# 🔚 CLOSE CONNECTION
 # =========================
 
 @app.on_event("shutdown")
