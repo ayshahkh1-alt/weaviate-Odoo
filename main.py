@@ -130,72 +130,81 @@ def update_article(article: Article):
 @app.post("/chat")
 def chat(data: Question):
 
+    # =========================
+    # 🔍 SEARCH
+    # =========================
+
     results = collection.query.near_text(
         query=data.question,
-        limit=8,
-        certainty=0.7
+        limit=8
     )
 
-    seen = set()
-    filtered_objects = []
+    # =========================
+    # 📦 BUILD CONTEXT (NO HTML)
+    # =========================
+
+    context = ""
 
     for obj in results.objects:
-        name = obj.properties.get("name") or obj.properties.get("title")
-
-        if name in seen:
-            continue
-
-        seen.add(name)
-        filtered_objects.append(obj)
-
-    context = "=== KNOWLEDGE BASE ===\n\n"
-
-    for obj in filtered_objects:
 
         props = obj.properties
 
         if props.get("type") == "product":
+
             context += f"""
-------------------
-TYPE: product
-NAME: {props.get("name")}
-COLOR: {props.get("color")}
-PRICE: {props.get("price")}
-AVAILABLE: {props.get("available")}
-URL: {props.get("product_url")}
-IMAGE: {props.get("image_url")}
+[منتج]
+
+الاسم: {props.get("name")}
+اللون: {props.get("color")}
+السعر: {props.get("price")}
+التوفر: {props.get("available")}
+رابط المنتج: {props.get("product_url")}
+الصورة: IMAGE:{props.get("image_url")}
+
 """
 
         elif props.get("type") == "article":
+
             context += f"""
-------------------
-TYPE: article
-TITLE: {props.get("title")}
-CONTENT: {props.get("content")}
+[مقال]
+
+العنوان: {props.get("title")}
+المحتوى: {props.get("content")}
+
 """
+
+    # =========================
+    # 🤖 OPENAI RESPONSE
+    # =========================
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
-        temperature=0.9,
-        presence_penalty=0.6,
-        frequency_penalty=0.6,
         messages=[
+
             {
                 "role": "system",
                 "content": """
 أنت مساعد ذكي لمتجر زهور وهدايا.
 
-- لا تستخدم HTML
+تعليمات مهمة:
+
+- لا تستخدم HTML نهائياً
 - لا تستخدم Markdown
-- كن متنوع في الردود
-- لا تكرر نفس الجمل
-- استخدم المعلومات فقط من السياق
+- إذا أردت عرض صورة استخدم فقط:
+
+IMAGE:رابط_الصورة
+
+- يمكن وضع الصورة داخل النص في أي مكان
+- اكتب ردود قصيرة وواضحة
+- إذا يوجد منتجات متعددة اعرضها بشكل مرتب
+- كن مساعد متجر حقيقي وودود
 """
             },
+
             {
                 "role": "user",
                 "content": f"""
-السؤال:
+سؤال المستخدم:
 {data.question}
 
 البيانات:
@@ -205,8 +214,13 @@ CONTENT: {props.get("content")}
         ]
     )
 
+    # =========================
+    # ✅ RESPONSE
+    # =========================
+
     return {
         "answer": response.choices[0].message.content,
+
         "products": [
             {
                 "name": obj.properties.get("name"),
@@ -216,10 +230,11 @@ CONTENT: {props.get("content")}
                 "image_url": obj.properties.get("image_url"),
                 "product_url": obj.properties.get("product_url")
             }
-            for obj in filtered_objects
+            for obj in results.objects
             if obj.properties.get("type") == "product"
         ]
     }
+
 
 # =========================
 # 🔚 CLOSE CONNECTION
