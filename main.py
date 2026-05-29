@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -51,6 +52,12 @@ ai_client = OpenAI(
 )
 
 # =========================
+# 🧠 CHAT MEMORY
+# =========================
+
+chat_memory = {}
+
+# =========================
 # 🟢 MODELS
 # =========================
 
@@ -69,6 +76,7 @@ class Article(BaseModel):
 
 
 class Question(BaseModel):
+    session_id: str
     question: str
 
 
@@ -131,27 +139,69 @@ def update_article(article: Article):
 def chat(data: Question):
 
     # =========================
+    # ❌ EMPTY MESSAGE
+    # =========================
+
+    if len(data.question.strip()) < 2:
+
+        return {
+            "answer": "ممكن توضّح أكثر 😊",
+            "products": []
+        }
+
+    # =========================
+    # 🧠 MEMORY
+    # =========================
+
+    if data.session_id not in chat_memory:
+        chat_memory[data.session_id] = []
+
+    history = chat_memory[data.session_id]
+
+    # =========================
     # 🔍 SEARCH
     # =========================
 
     results = collection.query.near_text(
         query=data.question,
-        limit=8
+        limit=8,
+        return_metadata=["distance"]
     )
 
     # =========================
-    # 📦 BUILD CONTEXT (NO HTML)
+    # 📦 BUILD CONTEXT
     # =========================
 
     context = ""
 
+    filtered_products = []
+
     for obj in results.objects:
 
         props = obj.properties
+        distance = obj.metadata.distance
+
+        # تجاهل النتائج الضعيفة
+        if distance > 0.35:
+            continue
+
+        # =========================
+        # 🌸 PRODUCT
+        # =========================
 
         if props.get("type") == "product":
 
+            filtered_products.append({
+                "name": props.get("name"),
+                "color": props.get("color"),
+                "price": props.get("price"),
+                "available": props.get("available"),
+                "image_url": props.get("image_url"),
+                "product_url": props.get("product_url")
+            })
+
             context += f"""
+
 [منتج]
 
 الاسم: {props.get("name")}
@@ -163,9 +213,14 @@ def chat(data: Question):
 
 """
 
+        # =========================
+        # 📚 ARTICLE
+        # =========================
+
         elif props.get("type") == "article":
 
             context += f"""
+
 [مقال]
 
 العنوان: {props.get("title")}
@@ -174,65 +229,168 @@ def chat(data: Question):
 """
 
     # =========================
+    # 🤖 SYSTEM PROMPT
+    # =========================
+
+    messages = [
+
+        {
+            "role": "system",
+            "content": """
+أنت مساعد ذكي ومتخصص لمتجر زهور وهدايا.
+
+تصرف كبائع محترف داخل متجر حقيقي.
+
+تعليمات مهمة جداً:
+
+- اقرأ المحادثة كاملة قبل الرد
+- لا تكرر كلمة "تفضل"
+- لا تكرر نفس الجمل
+- إذا لم تفهم طلب المستخدم اسأله سؤالاً توضيحياً
+- إذا لم تجد نتائج مناسبة اطلب تفاصيل أكثر
+- كن ودوداً وطبيعياً
+- تصرف كإنسان حقيقي
+
+أمثلة:
+
+إذا قال المستخدم:
+"بدي بوكيه"
+
+قل:
+"أكيد 😊 لأي مناسبة بدك البوكيه؟"
+
+إذا قال:
+"بدي هدية"
+
+قل:
+"لمين الهدية؟ وكم الميزانية تقريباً؟"
+
+إذا قال:
+"بدي بوكيه خطبة"
+
+قل:
+"بتحب يكون البوكيه ناعم ولا فخم؟"
+
+قواعد الرد:
+
+- ممنوع HTML
+- ممنوع Markdown
+
+إذا أردت عرض صورة استخدم فقط:
+IMAGE:رابط_الصورة
+
+إذا وجدت منتجات مناسبة:
+اعرضها بشكل مرتب مع وصف بسيط.
+"""
+        }
+
+    ]
+
+    # =========================
+    # 🧠 ADD MEMORY
+    # =========================
+
+    messages.extend(history[-12:])
+
+    # =========================
+    # 📦 ADD CONTEXT
+    # =========================
+
+    messages.append({
+        "role": "system",
+        "content": f"""
+معلومات من قاعدة البيانات:
+
+{context}
+"""
+    })
+
+    # =========================
+    # 👤 USER MESSAGE
+    # =========================
+
+    messages.append({
+        "role": "user",
+        "content": data.question
+    })
+
+    # =========================
+    # 💾 SAVE USER MESSAGE
+    # =========================
+
+    history.append({
+        "role": "user",
+        "content": data.question
+    })
+
+    # =========================
     # 🤖 OPENAI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-
-            {
-                "role": "system",
-                "content": """
-أنت مساعد ذكي لمتجر زهور وهدايا.
-
-تعليمات مهمة:
-
-- لا تستخدم HTML نهائياً
-- لا تستخدم Markdown
-- إذا أردت عرض صورة استخدم فقط:
-
-IMAGE:رابط_الصورة
-
-- يمكن وضع الصورة داخل النص في أي مكان
-- اكتب ردود قصيرة وواضحة
-- إذا يوجد منتجات متعددة اعرضها بشكل مرتب
-- كن مساعد متجر حقيقي وودود
-"""
-            },
-
-            {
-                "role": "user",
-                "content": f"""
-سؤال المستخدم:
-{data.question}
-
-البيانات:
-{context}
-"""
-            }
-        ]
+        messages=messages,
+        temperature=1
     )
+
+    answer = response.choices[0].message.content.strip()
+
+    # =========================
+    # 🚫 ANTI REPETITION
+    # =========================
+
+    bad_answers = [
+        "تفضل",
+        "تفضل 🌸",
+        "أكيد",
+        "نعم"
+    ]
+
+    if answer in bad_answers:
+
+        answer = (
+            "أكيد 😊 "
+            "ممكن توضّح أكثر شو النوع أو المناسبة اللي بدك إياها؟"
+        )
+
+    # =========================
+    # 💾 SAVE ASSISTANT MESSAGE
+    # =========================
+
+    history.append({
+        "role": "assistant",
+        "content": answer
+    })
+
+    # =========================
+    # ✂️ LIMIT MEMORY
+    # =========================
+
+    if len(history) > 20:
+        chat_memory[data.session_id] = history[-20:]
 
     # =========================
     # ✅ RESPONSE
     # =========================
 
     return {
-        "answer": response.choices[0].message.content,
+        "answer": answer,
+        "products": filtered_products
+    }
 
-        "products": [
-            {
-                "name": obj.properties.get("name"),
-                "color": obj.properties.get("color"),
-                "price": obj.properties.get("price"),
-                "available": obj.properties.get("available"),
-                "image_url": obj.properties.get("image_url"),
-                "product_url": obj.properties.get("product_url")
-            }
-            for obj in results.objects
-            if obj.properties.get("type") == "product"
-        ]
+
+# =========================
+# 🧹 CLEAR MEMORY
+# =========================
+
+@app.delete("/clear-memory/{session_id}")
+def clear_memory(session_id: str):
+
+    if session_id in chat_memory:
+        del chat_memory[session_id]
+
+    return {
+        "status": "memory cleared ✔"
     }
 
 
@@ -243,3 +401,4 @@ IMAGE:رابط_الصورة
 @app.on_event("shutdown")
 def shutdown_event():
     client.close()
+
