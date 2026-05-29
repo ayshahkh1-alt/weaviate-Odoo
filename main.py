@@ -62,22 +62,33 @@ chat_memory = {}
 # =========================
 
 class Flower(BaseModel):
+
     name: str
+
     color: str
+
     category: str
+
     price: float
+
     available: float
+
     image_url: str
+
     product_url: str
 
 
 class Article(BaseModel):
+
     title: str
+
     content: str
 
 
 class Question(BaseModel):
+
     question: str
+
     session_id: str
 
 
@@ -89,6 +100,7 @@ class Question(BaseModel):
 def update_flower(flower: Flower):
 
     collection.data.insert(
+
         properties={
 
             "type": "product",
@@ -108,24 +120,31 @@ def update_flower(flower: Flower):
             "product_url": flower.product_url,
 
             "text": f"""
-نوع المنتج: {flower.category}
 
-اسم المنتج: {flower.name}
+نوع المنتج الحقيقي: {flower.category}
 
-لون المنتج: {flower.color}
+اسم المنتج الحقيقي: {flower.name}
 
-السعر: {flower.price}
+لون المنتج الحقيقي: {flower.color}
 
-التوفر: {flower.available}
+السعر الحقيقي: {flower.price}
 
-رابط المنتج: {flower.product_url}
+التوفر الحقيقي: {flower.available}
 
-هذا المنتج مناسب للهدايا والمناسبات المختلفة
+رابط المنتج الحقيقي: {flower.product_url}
+
+مهم:
+لا تغيّر نوع المنتج.
+إذا كان المنتج وردة لا تعتبره بوكيه.
+إذا كان المنتج بوكيه لا تعتبره وردة.
+
 """
         }
     )
 
-    return {"status": "product saved ✔"}
+    return {
+        "status": "product saved ✔"
+    }
 
 
 # =========================
@@ -136,7 +155,9 @@ def update_flower(flower: Flower):
 def update_article(article: Article):
 
     collection.data.insert(
+
         properties={
+
             "type": "article",
 
             "title": article.title,
@@ -144,14 +165,20 @@ def update_article(article: Article):
             "content": article.content,
 
             "text": f"""
-عنوان المقال: {article.title}
 
-المحتوى: {article.content}
+عنوان المقال:
+{article.title}
+
+المحتوى:
+{article.content}
+
 """
         }
     )
 
-    return {"status": "article saved ✔"}
+    return {
+        "status": "article saved ✔"
+    }
 
 
 # =========================
@@ -170,12 +197,20 @@ def chat(data: Question):
         chat_memory[data.session_id] = []
 
     # =========================
+    # 🧠 CLEAN QUESTION
+    # =========================
+
+    question = data.question.strip().lower()
+
+    # =========================
     # 💾 SAVE USER MESSAGE
     # =========================
 
     chat_memory[data.session_id].append({
+
         "role": "user",
-        "content": data.question
+
+        "content": question
     })
 
     # =========================
@@ -183,8 +218,10 @@ def chat(data: Question):
     # =========================
 
     results = collection.query.hybrid(
-        query=data.question,
-        limit=4
+
+        query=question,
+
+        limit=3
     )
 
     # =========================
@@ -192,6 +229,8 @@ def chat(data: Question):
     # =========================
 
     context = ""
+
+    used_products = []
 
     for obj in results.objects:
 
@@ -203,23 +242,39 @@ def chat(data: Question):
 
         if props.get("type") == "product":
 
+            product_name = props.get("name")
+
+            # منع التكرار
+
+            if product_name in used_products:
+                continue
+
+            used_products.append(product_name)
+
             context += f"""
 
 [منتج]
 
-النوع: {props.get("category")}
+نوع المنتج الحقيقي:
+{props.get("category")}
 
-الاسم: {props.get("name")}
+اسم المنتج الحقيقي:
+{props.get("name")}
 
-اللون: {props.get("color")}
+لون المنتج الحقيقي:
+{props.get("color")}
 
-السعر: {props.get("price")}
+السعر الحقيقي:
+{props.get("price")}
 
-التوفر: {props.get("available")}
+التوفر الحقيقي:
+{props.get("available")}
 
-رابط المنتج: {props.get("product_url")}
+رابط المنتج:
+{props.get("product_url")}
 
-الصورة: IMAGE:{props.get("image_url")}
+الصورة:
+IMAGE:{props.get("image_url")}
 
 """
 
@@ -233,9 +288,11 @@ def chat(data: Question):
 
 [مقال]
 
-العنوان: {props.get("title")}
+العنوان:
+{props.get("title")}
 
-المحتوى: {props.get("content")}
+المحتوى:
+{props.get("content")}
 
 """
 
@@ -248,30 +305,45 @@ def chat(data: Question):
         {
             "role": "system",
             "content": """
-أنت مساعد ذكي لمتجر زهور وهدايا.
 
-تعليمات مهمة جداً:
+أنت مساعد مبيعات ذكي لمتجر زهور وهدايا.
 
-- تذكر سياق المحادثة السابقة
-- إذا طلب المستخدم تغيير اللون لا تغيّر نوع المنتج
+قواعد صارمة جداً:
+
+- اعتمد فقط على المنتجات الموجودة بالبيانات
+- ممنوع اختراع منتجات غير موجودة
+- ممنوع تغيير اسم المنتج
+- ممنوع تغيير نوع المنتج
+- إذا كان النوع وردة لا تقل بوكيه
+- إذا كان النوع بوكيه لا تقل وردة
+- اعرض اسم المنتج الحقيقي كما هو تماماً
+- إذا طلب المستخدم تغيير اللون حافظ على نفس نوع المنتج
 - إذا كانت المحادثة عن خطبة ابقِ ضمن اقتراحات الخطبة
 - إذا كانت المحادثة عن تخرج ابقِ ضمن اقتراحات التخرج
-- إذا طلب المستخدم وردة مفردة لا تعرض بوكيهات
-- إذا طلب المستخدم بوكيه لا تعرض وردة مفردة
-- لا تخترع منتجات غير موجودة
-- اعتمد فقط على البيانات المرسلة لك
-- لا تستخدم HTML نهائياً
+- تذكر سياق المحادثة السابقة دائماً
+- لا تستخدم HTML
 - لا تستخدم Markdown
-- اكتب بشكل مرتب وواضح
-- كن لطيفاً وكأنك موظف مبيعات حقيقي
+- لا تضع نجوم أو تنسيقات
+- لا تكرر نفس المنتج أكثر من مرة
+- لا تعرض منتجات لا علاقة لها بالسؤال
+- كن واضحاً ومختصراً
 
 طريقة عرض الصور:
 
 IMAGE:رابط_الصورة
 
-يمكنك وضع الصورة داخل النص.
+إذا كان هناك رابط منتج ضعه كما هو.
 
-إذا يوجد أكثر من منتج اعرضهم بشكل مرتب.
+اعرض المنتجات بهذا الشكل:
+
+1. اسم المنتج
+السعر: 100 شيكل
+اللون: أبيض
+IMAGE:رابط_الصورة
+رابط المنتج: الرابط
+
+كن لطيفاً وكأنك موظف مبيعات محترف.
+
 """
         }
     ]
@@ -285,7 +357,7 @@ IMAGE:رابط_الصورة
     )
 
     # =========================
-    # 🧠 ADD CURRENT QUESTION
+    # 🧠 CURRENT QUESTION
     # =========================
 
     messages.append({
@@ -296,7 +368,7 @@ IMAGE:رابط_الصورة
 
 سؤال المستخدم:
 
-{data.question}
+{question}
 
 
 البيانات المتوفرة:
@@ -314,19 +386,77 @@ IMAGE:رابط_الصورة
 
         model="gpt-4o-mini",
 
-        messages=messages
+        messages=messages,
+
+        temperature=0.4
     )
 
-    assistant_reply = response.choices[0].message.content
+    assistant_reply = (
+        response
+        .choices[0]
+        .message
+        .content
+    )
 
     # =========================
     # 💾 SAVE ASSISTANT REPLY
     # =========================
 
     chat_memory[data.session_id].append({
+
         "role": "assistant",
+
         "content": assistant_reply
     })
+
+    # =========================
+    # 🧠 LIMIT MEMORY
+    # =========================
+
+    if len(chat_memory[data.session_id]) > 12:
+
+        chat_memory[data.session_id] = (
+            chat_memory[data.session_id][-12:]
+        )
+
+    # =========================
+    # 🛍 PRODUCTS RESPONSE
+    # =========================
+
+    products_response = []
+
+    added_products = []
+
+    for obj in results.objects:
+
+        props = obj.properties
+
+        if props.get("type") != "product":
+            continue
+
+        product_name = props.get("name")
+
+        if product_name in added_products:
+            continue
+
+        added_products.append(product_name)
+
+        products_response.append({
+
+            "name": props.get("name"),
+
+            "color": props.get("color"),
+
+            "category": props.get("category"),
+
+            "price": props.get("price"),
+
+            "available": props.get("available"),
+
+            "image_url": props.get("image_url"),
+
+            "product_url": props.get("product_url")
+        })
 
     # =========================
     # ✅ RESPONSE
@@ -336,30 +466,7 @@ IMAGE:رابط_الصورة
 
         "answer": assistant_reply,
 
-        "products": [
-
-            {
-
-                "name": obj.properties.get("name"),
-
-                "color": obj.properties.get("color"),
-
-                "category": obj.properties.get("category"),
-
-                "price": obj.properties.get("price"),
-
-                "available": obj.properties.get("available"),
-
-                "image_url": obj.properties.get("image_url"),
-
-                "product_url": obj.properties.get("product_url")
-
-            }
-
-            for obj in results.objects
-
-            if obj.properties.get("type") == "product"
-        ]
+        "products": products_response
     }
 
 
