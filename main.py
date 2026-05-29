@@ -52,7 +52,7 @@ ai_client = OpenAI(
 )
 
 # =========================
-# 🧠 CHAT MEMORY
+# 🧠 MEMORY
 # =========================
 
 chat_memory = {}
@@ -106,7 +106,9 @@ def update_flower(flower: Flower):
         }
     )
 
-    return {"status": "product saved ✔"}
+    return {
+        "status": "product saved ✔"
+    }
 
 
 # =========================
@@ -128,21 +130,25 @@ def update_article(article: Article):
         }
     )
 
-    return {"status": "article saved ✔"}
+    return {
+        "status": "article saved ✔"
+    }
 
 
 # =========================
-# 🤖 CHAT ENDPOINT
+# 🤖 CHAT
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
+    question = data.question.strip()
+
     # =========================
     # ❌ EMPTY MESSAGE
     # =========================
 
-    if len(data.question.strip()) < 2:
+    if len(question) < 2:
 
         return {
             "answer": "ممكن توضّح أكثر 😊",
@@ -150,7 +156,7 @@ def chat(data: Question):
         }
 
     # =========================
-    # 🧠 MEMORY
+    # 🧠 MEMORY INIT
     # =========================
 
     if data.session_id not in chat_memory:
@@ -163,7 +169,7 @@ def chat(data: Question):
     # =========================
 
     results = collection.query.near_text(
-        query=data.question,
+        query=question,
         limit=8,
         return_metadata=["distance"]
     )
@@ -244,7 +250,9 @@ def chat(data: Question):
 تعليمات مهمة جداً:
 
 - اقرأ المحادثة كاملة قبل الرد
-- لا تكرر كلمة "تفضل"
+- ممنوع الرد بكلمة واحدة فقط
+- ممنوع قول "تفضل"
+- ممنوع الردود القصيرة جداً
 - لا تكرر نفس الجمل
 - إذا لم تفهم طلب المستخدم اسأله سؤالاً توضيحياً
 - إذا لم تجد نتائج مناسبة اطلب تفاصيل أكثر
@@ -275,11 +283,13 @@ def chat(data: Question):
 
 - ممنوع HTML
 - ممنوع Markdown
+- كل رد يجب أن يحتوي مساعدة حقيقية أو سؤال واضح
+- إذا كان المستخدم يشرح طلبه تابع معه ولا تقطع الحوار
 
 إذا أردت عرض صورة استخدم فقط:
 IMAGE:رابط_الصورة
 
-إذا وجدت منتجات مناسبة:
+إذا وجدت منتجات:
 اعرضها بشكل مرتب مع وصف بسيط.
 """
         }
@@ -287,10 +297,28 @@ IMAGE:رابط_الصورة
     ]
 
     # =========================
-    # 🧠 ADD MEMORY
+    # 🧠 CLEAN MEMORY
     # =========================
 
-    messages.extend(history[-12:])
+    clean_history = []
+
+    for msg in history[-12:]:
+
+        if msg["role"] == "assistant":
+
+            bad_answers = [
+                "تفضل",
+                "تفضل 🌸",
+                "أكيد",
+                "نعم"
+            ]
+
+            if msg["content"].strip() in bad_answers:
+                continue
+
+        clean_history.append(msg)
+
+    messages.extend(clean_history)
 
     # =========================
     # 📦 ADD CONTEXT
@@ -311,7 +339,7 @@ IMAGE:رابط_الصورة
 
     messages.append({
         "role": "user",
-        "content": data.question
+        "content": question
     })
 
     # =========================
@@ -320,11 +348,11 @@ IMAGE:رابط_الصورة
 
     history.append({
         "role": "user",
-        "content": data.question
+        "content": question
     })
 
     # =========================
-    # 🤖 OPENAI RESPONSE
+    # 🤖 AI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
@@ -336,21 +364,24 @@ IMAGE:رابط_الصورة
     answer = response.choices[0].message.content.strip()
 
     # =========================
-    # 🚫 ANTI REPETITION
+    # 🚫 REMOVE BAD ANSWERS
     # =========================
 
-    bad_answers = [
+    bad_words = [
         "تفضل",
         "تفضل 🌸",
         "أكيد",
         "نعم"
     ]
 
-    if answer in bad_answers:
+    if (
+        answer in bad_words
+        or len(answer) < 8
+    ):
 
         answer = (
             "أكيد 😊 "
-            "ممكن توضّح أكثر شو النوع أو المناسبة اللي بدك إياها؟"
+            "ممكن تحكيلي أكثر شو نوع البوكيه أو المناسبة اللي بدك إياها؟"
         )
 
     # =========================
