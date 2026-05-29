@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -277,46 +278,31 @@ def chat(data: Question):
 تعليمات مهمة جداً:
 
 - اقرأ المحادثة كاملة قبل الرد
-- ممنوع الرد بكلمة واحدة فقط
-- ممنوع قول "تفضل"
-- ممنوع الردود القصيرة جداً
 - لا تكرر نفس الجمل
-- كن ودوداً وطبيعياً
+- لا تكرر نفس الاقتراحات
+- كن طبيعي جداً
 - إذا لم تفهم المستخدم اسأله سؤال توضيحي
+- لا ترد بنفس الصيغة كل مرة
 
 مهم جداً:
 
 - ممنوع اقتراح أي منتج غير موجود
 - ممنوع اختراع منتجات
-- ممنوع تخمين أسماء منتجات
 - اعرض فقط المنتجات الموجودة داخل البيانات
-- إذا لم تجد منتج مناسب اطلب تفاصيل أكثر
 
 المنتجات المسموح ذكرها فقط:
 
 {allowed_products_text}
 
-ممنوع ذكر أي منتج غير موجود بالقائمة السابقة.
+إذا لم تجد منتج مناسب:
+اطلب تفاصيل أكثر.
 
-أمثلة ممتازة:
-
-إذا قال المستخدم:
-"بدي بوكيه"
-
-قل:
-"أكيد 😊 لأي مناسبة بدك البوكيه؟"
-
-إذا قال:
-"بدي هدية"
-
-قل:
-"لمين الهدية؟ وكم الميزانية تقريباً؟"
-
-إذا قال:
-"بدي بوكيه خطبة"
-
-قل:
-"بتحب يكون البوكيه ناعم ولا فخم؟"
+إذا أراد المستخدم مناسبة:
+اسأله عن:
+- المناسبة
+- اللون
+- الميزانية
+- نوع الهدية
 
 قواعد الرد:
 
@@ -325,9 +311,6 @@ def chat(data: Question):
 
 إذا أردت عرض صورة استخدم فقط:
 IMAGE:رابط_الصورة
-
-إذا وجدت منتجات:
-اعرضها بشكل مرتب مع وصف بسيط.
 """
         }
 
@@ -339,32 +322,45 @@ IMAGE:رابط_الصورة
 
     clean_history = []
 
-    for msg in history[-12:]:
+    last_answers = set()
 
-        if msg["role"] == "assistant":
+    for msg in history[-6:]:
 
-            bad_answers = [
-                "تفضل",
-                "تفضل 🌸",
-                "أكيد",
-                "نعم"
-            ]
+        content = msg["content"].strip()
 
-            if msg["content"].strip() in bad_answers:
-                continue
+        # تجاهل الردود القصيرة
+        if len(content) < 10:
+            continue
+
+        # تجاهل التكرار
+        if content in last_answers:
+            continue
+
+        # تجاهل الردود السيئة
+        bad_answers = [
+            "تفضل",
+            "تفضل 🌸",
+            "أكيد",
+            "نعم"
+        ]
+
+        if content in bad_answers:
+            continue
+
+        last_answers.add(content)
 
         clean_history.append(msg)
 
     messages.extend(clean_history)
 
     # =========================
-    # 📦 ADD CONTEXT
+    # 📦 CONTEXT
     # =========================
 
     messages.append({
         "role": "system",
         "content": f"""
-معلومات من قاعدة البيانات:
+معلومات قاعدة البيانات:
 
 {context}
 """
@@ -380,7 +376,7 @@ IMAGE:رابط_الصورة
     })
 
     # =========================
-    # 💾 SAVE USER MESSAGE
+    # 💾 SAVE USER
     # =========================
 
     history.append({
@@ -389,13 +385,15 @@ IMAGE:رابط_الصورة
     })
 
     # =========================
-    # 🤖 AI RESPONSE
+    # 🤖 OPENAI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        temperature=0.7,
+        temperature=1.2,
+        presence_penalty=0.8,
+        frequency_penalty=0.7,
         max_tokens=300
     )
 
@@ -417,22 +415,27 @@ IMAGE:رابط_الصورة
         or len(answer) < 15
     ):
 
-        first_product = filtered_products[0]
+        random_questions = [
 
-        answer = f"""
-أكيد 😊
+            "أكيد 😊 لأي مناسبة بدك الهدية؟",
 
-أنصحك بهذا المنتج:
+            "شو نوع البوكيه اللي ببالك؟ 🌸",
 
-{first_product['name']}
+            "بتحب يكون التصميم ناعم ولا فخم؟",
 
-السعر: {first_product['price']}
+            "كم الميزانية اللي حابب تكون تقريباً؟",
 
-IMAGE:{first_product['image_url']}
-"""
+            "لمين الهدية؟ 😊"
+        ]
+
+        import random
+
+        answer = random.choice(
+            random_questions
+        )
 
     # =========================
-    # 💾 SAVE ASSISTANT MESSAGE
+    # 💾 SAVE ASSISTANT
     # =========================
 
     history.append({
@@ -444,8 +447,8 @@ IMAGE:{first_product['image_url']}
     # ✂️ LIMIT MEMORY
     # =========================
 
-    if len(history) > 20:
-        chat_memory[data.session_id] = history[-20:]
+    if len(history) > 12:
+        chat_memory[data.session_id] = history[-12:]
 
     # =========================
     # ✅ RESPONSE
