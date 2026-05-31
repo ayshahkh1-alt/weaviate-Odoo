@@ -74,32 +74,8 @@ print("Connected to Weaviate ✔")
 
 
 # =========================
-# 🚫 FILTERS
+# 🚫 FILTERS (ARTICLES ONLY)
 # =========================
-
-ALLOWED_CATEGORIES = [
-    "ورد طبيعي",
-    "ورد صناعي",
-    "بوكيهات"
-]
-
-BLOCKED_KEYWORDS = [
-    "مسكات",
-    "مسكة",
-    "عرائس",
-    "كماليات",
-    "اكسسوارات",
-    "ورشة",
-    "دورة",
-    "تدريب",
-    "delivery",
-    "discount",
-    "gift card",
-    "booking",
-    "fees",
-    "wallet",
-    "invoice"
-]
 
 BAD_PATTERNS = [
     "@",
@@ -111,137 +87,7 @@ BAD_PATTERNS = [
 
 
 # =========================
-# 🌸 PRODUCTS
-# =========================
-
-products = models.execute_kw(
-    db,
-    uid,
-    password,
-    'product.template',
-    'search_read',
-    [[]],
-    {
-        'fields': [
-            'id',
-            'name',
-            'list_price',
-            'categ_id'
-        ]
-    }
-)
-
-print(f"Found {len(products)} products")
-
-
-for p in products:
-
-    product_name = p["name"].lower()
-
-    category_raw = p.get("categ_id")
-
-    if isinstance(category_raw, list) and len(category_raw) > 1:
-        category_name = category_raw[1].strip()
-    else:
-        category_name = ""
-
-    # =========================
-    # ❌ FILTERS
-    # =========================
-
-    if any(word in product_name for word in BLOCKED_KEYWORDS):
-        continue
-
-    if category_name not in ALLOWED_CATEGORIES:
-        continue
-
-    product_id = p["id"]
-
-    # ✅ رابط الطلب
-    product_url = f"{url}/shop/product/{product_id}"
-
-    # =========================
-    # 🔍 GET VARIANTS
-    # =========================
-
-    variants = models.execute_kw(
-        db,
-        uid,
-        password,
-        'product.product',
-        'search_read',
-        [[['product_tmpl_id', '=', product_id]]],
-        {
-            'fields': [
-                'id',
-                'name',
-                'qty_available'
-            ]
-        }
-    )
-
-    for v in variants:
-
-        # ✅ صورة الفاريانت
-        variant_image = (
-            f"{url}/web/image/product.product/"
-            f"{v['id']}/image_1920"
-        )
-
-        text = safe_text(f"""
-       
-المنتج: {p['name']}
-السعر: {p['list_price']}
-اللون/النوع: {v['name']}
-الكمية: {v['qty_available']}
-
-رابط المنتج:
-{product_url}
-
-رابط الصورة:
-{variant_image}
-
-        """)
-
-        try:
-
-            collection.data.insert(
-                properties={
-
-                    "type": "product",
-
-                    "name": p["name"],
-
-                    "color": v["name"],
-
-                    "price": p["list_price"],
-
-                    "available": v["qty_available"],
-
-                    # ✅ صورة المنتج
-                    "image_url": variant_image,
-
-                    # ✅ رابط الطلب
-                    "product_url": product_url,
-
-                    "text": text
-                }
-            )
-
-            print(
-                f"Inserted: {p['name']} - {v['name']}"
-            )
-
-        except Exception as e:
-
-            print(
-                "Skipped product:",
-                str(e)[:200]
-            )
-
-
-# =========================
-# 📚 ARTICLES
+# 📚 ARTICLES ONLY
 # =========================
 
 articles = models.execute_kw(
@@ -271,52 +117,39 @@ for article in articles:
     if not title:
         continue
 
-    # ❌ advanced filtering
+    # ❌ filter bad patterns
     if any(p in title.lower() for p in BAD_PATTERNS):
         continue
 
-    if not title.strip():
-      continue
-
     raw_body = article.get("body", "")
-
     body = clean_html(raw_body)
-
     body = safe_text(body, 2000)
 
-    text = safe_text(f"""
-    عنوان المقال:
-    {title}
+    if not body:
+        continue
 
-    المحتوى:
-    {body}
-    """)
+    text = safe_text(f"""
+عنوان المقال:
+{title}
+
+المحتوى:
+{body}
+""")
 
     try:
-
         collection.data.insert(
             properties={
-
                 "type": "article",
-
                 "title": title,
-
                 "content": body,
-
                 "text": text
             }
         )
 
-        print(
-            f"Inserted article: {title}"
-        )
+        print(f"Inserted article ✔: {title}")
 
     except Exception as e:
-
-        print(
-            "Skipped article:",
-            str(e)[:200]
-        )
+        print("Skipped article:", str(e)[:200])
 
 
 # =========================
