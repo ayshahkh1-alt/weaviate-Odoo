@@ -105,7 +105,6 @@ BAD_PATTERNS = [
     "@",
     "api-user",
     "test",
-    "مرحبا",
     "gmail.com",
     "stu.najah.edu"
 ]
@@ -276,8 +275,8 @@ for article in articles:
     if any(p in title.lower() for p in BAD_PATTERNS):
         continue
 
-    if len(title.split()) < 2:
-        continue
+    if not title.strip():
+      continue
 
     raw_body = article.get("body", "")
 

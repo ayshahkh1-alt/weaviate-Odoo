@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -16,7 +15,7 @@ load_dotenv()
 app = FastAPI()
 
 # =========================
-# ✅ CORS
+# CORS
 # =========================
 
 app.add_middleware(
@@ -28,7 +27,7 @@ app.add_middleware(
 )
 
 # =========================
-# 🔗 WEAVIATE CONNECTION
+# WEAVIATE CONNECTION
 # =========================
 
 client = weaviate.connect_to_weaviate_cloud(
@@ -44,7 +43,7 @@ client = weaviate.connect_to_weaviate_cloud(
 collection = client.collections.get("KnowledgeBase")
 
 # =========================
-# 🤖 OPENAI CLIENT
+# OPENAI CLIENT
 # =========================
 
 ai_client = OpenAI(
@@ -52,126 +51,43 @@ ai_client = OpenAI(
 )
 
 # =========================
-# 🧠 CHAT MEMORY
+# CHAT MEMORY
 # =========================
 
 chat_memory = {}
 
 # =========================
-# 🟢 MODELS
+# MODELS
 # =========================
 
-class Flower(BaseModel):
-
-    name: str
-
-    color: str
-
-    category: str
-
-    price: float
-
-    available: float
-
-    image_url: str
-
-    product_url: str
-
-
 class Article(BaseModel):
-
     title: str
-
     content: str
 
 
 class Question(BaseModel):
-
     question: str
-
     session_id: str
 
 
 # =========================
-# 🌸 SAVE PRODUCT
-# =========================
-
-@app.post("/update-flower")
-def update_flower(flower: Flower):
-
-    collection.data.insert(
-
-        properties={
-
-            "type": "product",
-
-            "name": flower.name,
-
-            "color": flower.color,
-
-            "category": flower.category,
-
-            "price": flower.price,
-
-            "available": flower.available,
-
-            "image_url": flower.image_url,
-
-            "product_url": flower.product_url,
-
-            "text": f"""
-
-نوع المنتج الحقيقي: {flower.category}
-
-اسم المنتج الحقيقي: {flower.name}
-
-لون المنتج الحقيقي: {flower.color}
-
-السعر الحقيقي: {flower.price}
-
-التوفر الحقيقي: {flower.available}
-
-رابط المنتج الحقيقي: {flower.product_url}
-
-مهم:
-لا تغيّر نوع المنتج.
-إذا كان المنتج وردة لا تعتبره بوكيه.
-إذا كان المنتج بوكيه لا تعتبره وردة.
-
-"""
-        }
-    )
-
-    return {
-        "status": "product saved ✔"
-    }
-
-
-# =========================
-# 📚 SAVE ARTICLE
+# SAVE ARTICLE ONLY
 # =========================
 
 @app.post("/update-article")
 def update_article(article: Article):
 
     collection.data.insert(
-
         properties={
-
             "type": "article",
-
             "title": article.title,
-
             "content": article.content,
-
             "text": f"""
-
 عنوان المقال:
 {article.title}
 
 المحتوى:
 {article.content}
-
 """
         }
     )
@@ -182,299 +98,145 @@ def update_article(article: Article):
 
 
 # =========================
-# 🤖 CHAT ENDPOINT
+# CHAT ENDPOINT (RAG ONLY)
 # =========================
 
 @app.post("/chat")
 def chat(data: Question):
 
     # =========================
-    # 🧠 CREATE SESSION
+    # SESSION
     # =========================
 
     if data.session_id not in chat_memory:
-
         chat_memory[data.session_id] = []
-
-    # =========================
-    # 🧠 CLEAN QUESTION
-    # =========================
 
     question = data.question.strip().lower()
 
-    # =========================
-    # 💾 SAVE USER MESSAGE
-    # =========================
-
     chat_memory[data.session_id].append({
-
         "role": "user",
-
         "content": question
     })
 
     # =========================
-    # 🔍 SEARCH
+    # SEARCH ARTICLES ONLY
     # =========================
 
     results = collection.query.hybrid(
-
         query=question,
-
-        limit=8
+        limit=10,
+        alpha=0.3
     )
 
     # =========================
-    # 📦 BUILD CONTEXT
+    # BUILD CONTEXT
     # =========================
 
     context = ""
 
-    used_products = []
+    used_articles = []
 
     for obj in results.objects:
-
         props = obj.properties
 
-        # =========================
-        # 🌸 PRODUCT
-        # =========================
+        if props.get("type") != "article":
+            continue
 
-        if props.get("type") == "product":
+        title = props.get("title")
 
-            product_name = props.get("name")
+        if title in used_articles:
+            continue
 
-            # منع التكرار
+        used_articles.append(title)
 
-            if product_name in used_products:
-                continue
-
-            used_products.append(product_name)
-
-            context += f"""
-
-[منتج]
-
-نوع المنتج الحقيقي:
-{props.get("category")}
-
-اسم المنتج الحقيقي:
-{props.get("name")}
-
-لون المنتج الحقيقي:
-{props.get("color")}
-
-السعر الحقيقي:
-{props.get("price")}
-
-التوفر الحقيقي:
-{props.get("available")}
-
-رابط المنتج:
-{props.get("product_url")}
-
-الصورة:
-IMAGE:{props.get("image_url")}
-
-"""
-
-        # =========================
-        # 📚 ARTICLE
-        # =========================
-
-        elif props.get("type") == "article":
-
-            context += f"""
-
+        context += f"""
 [مقال]
-
-العنوان:
-{props.get("title")}
-
-المحتوى:
-{props.get("content")}
-
+العنوان: {title}
+المحتوى: {props.get("content")}
 """
 
     # =========================
-    # 🧠 BUILD MESSAGES
+    # SYSTEM PROMPT
     # =========================
 
     messages = [
-
         {
             "role": "system",
             "content": """
+أنت مساعد ذكي يعتمد فقط على المقالات المتوفرة.
 
-أنت مساعد مبيعات ذكي لمتجر زهور وهدايا.
+قواعد صارمة:
 
-قواعد صارمة جداً:
-
-- اعتمد فقط على المنتجات الموجودة بالبيانات
-- ممنوع اختراع منتجات غير موجودة
-- ممنوع تغيير اسم المنتج
-- ممنوع تغيير نوع المنتج
-- إذا كان النوع وردة لا تقل بوكيه
-- إذا كان النوع بوكيه لا تقل وردة
-- اعرض اسم المنتج الحقيقي كما هو تماماً
-- إذا طلب المستخدم تغيير اللون حافظ على نفس نوع المنتج
-- إذا كانت المحادثة عن خطبة ابقِ ضمن اقتراحات الخطبة
-- إذا كانت المحادثة عن تخرج ابقِ ضمن اقتراحات التخرج
-- تذكر سياق المحادثة السابقة دائماً
+- استخدم فقط المعلومات الموجودة في المقالات
+- ممنوع اختلاق معلومات غير موجودة
+- إذا لم تجد إجابة قل: لا توجد معلومات كافية في المقالات
+- كن دقيقاً وواضحاً
 - لا تستخدم HTML
 - لا تستخدم Markdown
-- لا تضع نجوم أو تنسيقات
-- لا تكرر نفس المنتج أكثر من مرة
-- لا تعرض منتجات لا علاقة لها بالسؤال
-- كن واضحاً ومختصراً
-- لا تقترح بوكيهات غير متوفرة
-طريقة عرض الصور:
-
-IMAGE:رابط_الصورة
-
-إذا كان هناك رابط منتج ضعه كما هو.
-
-اعرض المنتجات بهذا الشكل:
-
-1. اسم المنتج
-السعر: 100 شيكل
-اللون: أبيض
-IMAGE:رابط_الصورة
-رابط المنتج: الرابط
-
-كن لطيفاً وكأنك موظف مبيعات محترف.
-
+- لا تستخدم تنسيقات أو نجوم
+- اجعل الإجابة مفهومة وبسيطة
 """
         }
     ]
 
     # =========================
-    # 🧠 ADD PREVIOUS CHAT
+    # MEMORY
     # =========================
 
-    messages.extend(
-        chat_memory[data.session_id][-10:]
-    )
+    messages.extend(chat_memory[data.session_id][-10:])
 
     # =========================
-    # 🧠 CURRENT QUESTION
+    # USER INPUT + CONTEXT
     # =========================
 
     messages.append({
-
         "role": "user",
-
         "content": f"""
-
 سؤال المستخدم:
-
 {question}
 
-
-البيانات المتوفرة:
-
+المقالات المتوفرة:
 {context}
-
 """
     })
 
     # =========================
-    # 🤖 OPENAI RESPONSE
+    # OPENAI RESPONSE
     # =========================
 
     response = ai_client.chat.completions.create(
-
         model="gpt-4o-mini",
-
         messages=messages,
-
-        temperature=0.4
+        temperature=0.3
     )
 
-    assistant_reply = (
-        response
-        .choices[0]
-        .message
-        .content
-    )
+    answer = response.choices[0].message.content
 
     # =========================
-    # 💾 SAVE ASSISTANT REPLY
+    # SAVE MEMORY
     # =========================
 
     chat_memory[data.session_id].append({
-
         "role": "assistant",
-
-        "content": assistant_reply
+        "content": answer
     })
 
-    # =========================
-    # 🧠 LIMIT MEMORY
-    # =========================
-
     if len(chat_memory[data.session_id]) > 12:
-
-        chat_memory[data.session_id] = (
-            chat_memory[data.session_id][-12:]
-        )
+        chat_memory[data.session_id] = chat_memory[data.session_id][-12:]
 
     # =========================
-    # 🛍 PRODUCTS RESPONSE
-    # =========================
-
-    products_response = []
-
-    added_products = []
-
-    for obj in results.objects:
-
-        props = obj.properties
-
-        if props.get("type") != "product":
-            continue
-
-        product_name = props.get("name")
-
-        if product_name in added_products:
-            continue
-
-        added_products.append(product_name)
-
-        products_response.append({
-
-            "name": props.get("name"),
-
-            "color": props.get("color"),
-
-            "category": props.get("category"),
-
-            "price": props.get("price"),
-
-            "available": props.get("available"),
-
-            "image_url": props.get("image_url"),
-
-            "product_url": props.get("product_url")
-        })
-
-    # =========================
-    # ✅ RESPONSE
+    # RESPONSE
     # =========================
 
     return {
-
-        "answer": assistant_reply,
-
-        "products": products_response
+        "answer": answer
     }
 
 
 # =========================
-# 🔚 CLOSE CONNECTION
+# SHUTDOWN
 # =========================
 
 @app.on_event("shutdown")
 def shutdown_event():
-
     client.close()
